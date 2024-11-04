@@ -1,15 +1,17 @@
+import random
 from fastapi import BackgroundTasks, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 import bcrypt
 from jose import JWTError, jwt
 from aiosmtplib import send
 from email.mime.text import MIMEText
-from db import admins_collection, employees_collection, companies_collection
+from db import admins_collection, employees_collection, companies_collection, random_codes_collection
+from models.random_codes import RandomCodes
 from config import settings
 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, tzinfo
 
 UTC = timezone.utc
 
@@ -35,8 +37,8 @@ def hash_password(password: str) -> str:
     return hashed_password
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+def verify_password(plain_password: str, hashed_password: bytes) -> bool:
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password)
 
 
 def create_access_token(payload: Dict[str, Any], expiry: timedelta):
@@ -121,3 +123,102 @@ async def send_verification_code(email: str, subject: str, message:str, backgrou
 
 async def send_email_async(message):
     await send(message, hostname=smtp_host, port=smtp_port, username=smtp_user, password=smtp_pwd, use_tls=True)
+
+
+def generate_email_verification_code(grace_period = timedelta(minutes=60)) -> Tuple[int, datetime]:
+    random_code = random.randint(100000, 999999)
+    expiration_time = datetime.now(UTC) + grace_period
+    return random_code, expiration_time
+
+
+async def store_random_codes_in_db(user, code: int, expiration_time: datetime):
+
+    try:
+        existing_user = await random_codes_collection.find_one({"user_email": user["email"]})
+        if existing_user:
+            rate_limit = existing_user.get("updated_at")
+            if rate_limit is not None and rate_limit.tzinfo is None:
+                rate_limit  = rate_limit.replace(tzinfo=UTC)
+
+                if rate_limit and (datetime.now(UTC) - rate_limit).total_seconds() < 60:
+                    raise HTTPException(status_code=429, detail="You can only request a new verification email every 1 minute.")
+                
+            exp_time = datetime.now(UTC) + timedelta(minutes=60)
+            random_codes_collection.update_one({"user_email": user["email"]}, {"$set": {"code": code, "expiration_time": exp_time, "verified": False}})
+
+        else:
+            code_instance = RandomCodes(
+            user_email=user["email"],
+            code = code,
+            expiration_time=expiration_time,
+            updated_at = datetime.now(UTC)
+        )
+            await random_codes_collection.insert_one(code_instance.model_dump())
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"An error occured - {e}")
+
+
+# async def verify_verification_code(email: str, verification_code: int):
+ 
+#     try:
+#         code_to_verify = await random_codes_collection.find_one({"user_email": email})
+#         if not code_to_verify:
+#             raise HTTPException(status_code=400, detail="Email address not found")
+        
+#         if str(verification_code) != str(code_to_verify.get("code")):
+#             raise HTTPException(status_code=400, detail="Invalid verification code.")
+        
+#         expiration_time = code_to_verify.get("expiration_time")
+#         if expiration_time is not None and expiration_time.tzinfo is None:
+#             expiration_time = expiration_time.replace(tzinfo=UTC)
+
+#         if expiration_time is None or datetime.now(UTC) > expiration_time:
+#             raise HTTPException(status_code=400, detail="Verification code has expired")
+        
+#         await random_codes_collection.update_one(
+#             {"user_email": email},
+#             {"$set": {"verified": True}}
+#         )
+        
+#         return {"message": "Verification code verified successfully"}
+    
+#     except Exception as e:
+#         print("user_code", verification_code)
+#         print("retrieved-code", code_to_verify.get("code"))
+#         raise HTTPException(status_code=400, detail=f"An error occurred - {e}")
+
+
+async def verify_verification_code(email: str, verification_code: int):
+    try:
+        # Retrieve the verification code document for the user
+        code_to_verify = await random_codes_collection.find_one({"user_email": email})
+        if not code_to_verify:
+            raise HTTPException(status_code=400, detail="Email address not found")
+        
+        # Check if the provided code matches the stored code
+        if str(verification_code) != str(code_to_verify.get("code")):
+            raise HTTPException(status_code=400, detail="Invalid verification code.")
+        
+        # Check if the code has expired
+        expiration_time = code_to_verify.get("expiration_time")
+        if expiration_time is not None and expiration_time.tzinfo is None:
+            expiration_time = expiration_time.replace(tzinfo=UTC)
+
+        if expiration_time is None or datetime.now(UTC) > expiration_time:
+            raise HTTPException(status_code=400, detail="Verification code has expired")
+        
+        # Update the code as verified
+        await random_codes_collection.update_one(
+            {"user_email": email},
+            {"$set": {"verified": True}}
+        )
+        
+        return {"message": "Verification code verified successfully"}
+    
+    except Exception as e:
+        # Only attempt to print the code if code_to_verify is not None
+        if code_to_verify:
+            print("user_code", verification_code)
+            print("retrieved-code", code_to_verify.get("code"))
+        raise HTTPException(status_code=400, detail=f"An error occurred - {e}")

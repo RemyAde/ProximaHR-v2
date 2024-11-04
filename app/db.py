@@ -9,3 +9,4 @@ db = client.hr_system
 companies_collection = db.companies
 admins_collection = db.admins
 employees_collection = db.employees
+random_codes_collection = db.random_codes
