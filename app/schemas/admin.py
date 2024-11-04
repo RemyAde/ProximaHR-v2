@@ -9,3 +9,6 @@ class CreateAdmin(BaseModel):
     password: str
     role: Optional[str] = None
 
+
+class EmailInput(BaseModel):
+    email: EmailStr

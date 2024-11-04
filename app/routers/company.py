@@ -6,6 +6,7 @@ from pydantic import EmailStr
 from datetime import timedelta
 from db import companies_collection, admins_collection, employees_collection, random_codes_collection
 from schemas.company import Company as CompanyCreate
+from schemas.admin import EmailInput
 from schemas.codes_and_pwds import Code, PasswordReset
 from models.companies import Company
 from utils import (Token, send_verification_code, create_access_token, 
@@ -92,8 +93,9 @@ async def login_for_access_token(user_type: str, company_id: str = Query(...), f
 
 
 @router.post("/send-verification-code-email")
-async def send_reset_password_verification_email(background_tasks: BackgroundTasks, email:EmailStr = Body(...)):
-    
+async def send_reset_password_verification_email(email_data: EmailInput, background_tasks: BackgroundTasks):
+    email = email_data.email
+
     user = await admins_collection.find_one({"email": email})
     if not user:
         user = await employees_collection.find_one({"email": email})
