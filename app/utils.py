@@ -159,48 +159,15 @@ async def store_random_codes_in_db(user, code: int, expiration_time: datetime):
         raise HTTPException(status_code=400, detail=f"An error occured - {e}")
 
 
-# async def verify_verification_code(email: str, verification_code: int):
- 
-#     try:
-#         code_to_verify = await random_codes_collection.find_one({"user_email": email})
-#         if not code_to_verify:
-#             raise HTTPException(status_code=400, detail="Email address not found")
-        
-#         if str(verification_code) != str(code_to_verify.get("code")):
-#             raise HTTPException(status_code=400, detail="Invalid verification code.")
-        
-#         expiration_time = code_to_verify.get("expiration_time")
-#         if expiration_time is not None and expiration_time.tzinfo is None:
-#             expiration_time = expiration_time.replace(tzinfo=UTC)
-
-#         if expiration_time is None or datetime.now(UTC) > expiration_time:
-#             raise HTTPException(status_code=400, detail="Verification code has expired")
-        
-#         await random_codes_collection.update_one(
-#             {"user_email": email},
-#             {"$set": {"verified": True}}
-#         )
-        
-#         return {"message": "Verification code verified successfully"}
-    
-#     except Exception as e:
-#         print("user_code", verification_code)
-#         print("retrieved-code", code_to_verify.get("code"))
-#         raise HTTPException(status_code=400, detail=f"An error occurred - {e}")
-
-
 async def verify_verification_code(email: str, verification_code: int):
     try:
-        # Retrieve the verification code document for the user
         code_to_verify = await random_codes_collection.find_one({"user_email": email})
         if not code_to_verify:
             raise HTTPException(status_code=400, detail="Email address not found")
         
-        # Check if the provided code matches the stored code
         if str(verification_code) != str(code_to_verify.get("code")):
             raise HTTPException(status_code=400, detail="Invalid verification code.")
         
-        # Check if the code has expired
         expiration_time = code_to_verify.get("expiration_time")
         if expiration_time is not None and expiration_time.tzinfo is None:
             expiration_time = expiration_time.replace(tzinfo=UTC)
@@ -208,7 +175,6 @@ async def verify_verification_code(email: str, verification_code: int):
         if expiration_time is None or datetime.now(UTC) > expiration_time:
             raise HTTPException(status_code=400, detail="Verification code has expired")
         
-        # Update the code as verified
         await random_codes_collection.update_one(
             {"user_email": email},
             {"$set": {"verified": True}}
@@ -217,7 +183,6 @@ async def verify_verification_code(email: str, verification_code: int):
         return {"message": "Verification code verified successfully"}
     
     except Exception as e:
-        # Only attempt to print the code if code_to_verify is not None
         if code_to_verify:
             print("user_code", verification_code)
             print("retrieved-code", code_to_verify.get("code"))

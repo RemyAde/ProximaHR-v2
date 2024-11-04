@@ -115,7 +115,7 @@ async def send_reset_password_verification_email(email:EmailStr, background_task
 
 @router.post("/verify-password-reset-verification-code")
 async def verify_pwd_reset_code(email: EmailStr = Query(...), code: Code = Body(...)):
-    await verify_verification_code(email, code)
+    await verify_verification_code(email, code.code)
 
 
 @router.post("/reset-password")
