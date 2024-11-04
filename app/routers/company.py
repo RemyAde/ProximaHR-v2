@@ -92,8 +92,8 @@ async def login_for_access_token(user_type: str, company_id: str = Query(...), f
 
 
 @router.post("/send-verification-code-email")
-async def send_reset_password_verification_email(email:EmailStr, background_tasks: BackgroundTasks):
-
+async def send_reset_password_verification_email(background_tasks: BackgroundTasks, email:EmailStr = Body(...)):
+    
     user = await admins_collection.find_one({"email": email})
     if not user:
         user = await employees_collection.find_one({"email": email})
