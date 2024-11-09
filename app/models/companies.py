@@ -12,6 +12,9 @@ class Company(BaseModel):
     country: Optional[str] = None
     state: Optional[str] = None
     town: Optional[str] = None
+    year_founded: Optional[int] = None
+    staff_size = Optional[int] = None
+    departments = Optional[list] = None
     payment_type: Optional[str] = None
     subscription_start: Optional[datetime] = None
     subscription_end: Optional[datetime] = None
