@@ -20,7 +20,7 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str, admin_code: str)
     if company["admin_creation_code"] != admin_code:
         raise HTTPException(status_code=401, detail="Invalid admin creation code")
     
-    if len(company.get("admin", [])) > 4:
+    if len(company.get("admin", [])) >= 1:
         raise HTTPException(status_code=400, detail="Admin limit reached")
 
     admin_obj_dict = admin_obj.model_dump(exclude_unset=True)
@@ -35,8 +35,6 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str, admin_code: str)
         {"registration_number": company_id},
         {"$push": {"admins": admin_instance.email},
          "$inc": {"staff_size": 1}}
-        # make disable_admin_creation_code - check admin count
-        # at the beginning and if not zero raise error
     )
 
     return {"message": "Admin created successfully"}
