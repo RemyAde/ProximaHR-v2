@@ -1,3 +1,10 @@
+import requests
+import time 
+import threading
+import logging 
+
+import uvicorn
+
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from routers import auth
@@ -26,11 +33,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+logging.basicConfig(
+    level=logging.INFO,  # Set the logging level to INFO
+    format='%(asctime)s - %(levelname)s - %(message)s',  # Log format
+)
+
 @app.get("/")
 def index():
     return {"message": "Hello Proxima"}
 
 
+def ping_server(url):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        logging.info(f"pinged {url} successfully.")
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error pinging {url}: {e}")
+
+
+def main_ping():
+    url = "https://proximahr.onrender.com"
+    ping_interval = 300
+
+    while True:
+        ping_server(url)
+        time.sleep(ping_interval)
+
+
 if __name__ == "__main__":
-    import uvicorn
+    # Start the pinging function in a separate thread
+    ping_thread = threading.Thread(target=main_ping, daemon=True)
+    ping_thread.start()
+
+    # Run the Uvicorn server
     uvicorn.run("main:app", host="0.0.0.0", port=11000, reload=True)
