@@ -60,3 +60,6 @@ cython_debug
 # Ignore database files
 *.db
 migrations/
+
+# other helper files
+test.js
