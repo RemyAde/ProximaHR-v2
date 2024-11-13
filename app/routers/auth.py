@@ -16,20 +16,6 @@ from utils import (Token, send_verification_code, create_access_token,
 router = APIRouter()
 
 
-@router.get("")
-async def get_company(company_id: str, user_and_type: tuple = Depends(get_current_user)):
-    user, user_type = user_and_type
-
-    company = await companies_collection.find_one({"registration_number": company_id})
-    if not company:
-        raise HTTPException(status_code=400, detail="Company not found")
-    
-    if user["company_id"] != company_id:
-        raise HTTPException(status_code=401, detail="You are not authorized to access this page")
-    
-    return {"message": f"You are authorized to view {company_id}"}
-
-
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 

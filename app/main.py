@@ -1,14 +1,16 @@
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
-from routers import company, admin, employee
+from routers import auth
+from routers import admin, employee, dashboard
 from config import settings
 
 
 app = FastAPI(title=settings.PROJECT_TITLE)
 
-app.include_router(company.router, prefix="/company", tags=["company"])
+app.include_router(auth.router, prefix="/company", tags=["company"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(employee.router, prefix="/employee", tags=["employee"])
+app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 
 # Middleware
 app.add_middleware(

@@ -1,5 +1,5 @@
 import random
-from fastapi import BackgroundTasks, HTTPException, Depends
+from fastapi import BackgroundTasks, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from typing import Dict, Any, Tuple
@@ -37,7 +37,10 @@ def hash_password(password: str) -> str:
     return hashed_password
 
 
-def verify_password(plain_password: str, hashed_password: bytes) -> bool:
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    if isinstance(hashed_password, str):
+        hashed_password = hashed_password.encode('utf-8')
+
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password)
 
 
