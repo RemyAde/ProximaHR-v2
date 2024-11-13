@@ -15,12 +15,12 @@ router = APIRouter()
 
 
 @router.post("/create-admin")
-async def create_admin(admin_obj: CreateAdmin, company_id: str, admin_code: str):
+async def create_admin(admin_obj: CreateAdmin, company_id: str):
     company = await companies_collection.find_one({"registration_number": company_id})
     if not company:
         raise HTTPException(status_code=400, detail="Company not found")
     
-    if company["admin_creation_code"] != admin_code:
+    if company["admin_creation_code"] != admin_obj.admin_code:
         raise HTTPException(status_code=401, detail="Invalid admin creation code")
     
     if len(company.get("admin", [])) >= 1:

@@ -7,6 +7,7 @@ class CreateAdmin(BaseModel):
     last_name: str
     email: EmailStr
     password: str
+    admin_code: str
     role: Optional[str] = None
 
 
