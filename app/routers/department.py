@@ -25,9 +25,18 @@ async def list_departments(company_id: str, user_and_type: tuple = Depends(get_c
         if company.get("registration_number") != user.get("company_id"):
             raise get_user_exception()
         
+        data = []
         departments = await departments_collection.find({"company_id": company_id}).sort("name", ASCENDING).to_list(length=None)
 
-        return {"departments": departments}
+        for department in departments:
+            data.append({
+                "name": department.get("name", ""),
+                "hod": department.get("hod", ""),
+                "staffs": department.get("staffs", ""), #work around either not returning this field or returning full names
+                "staff_size": department.get("staff_size", "")
+            })
+
+        return {"departments": data}
     
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An error occured - {e}")
