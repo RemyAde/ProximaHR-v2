@@ -1,5 +1,5 @@
 from pymongo import ASCENDING
-
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status 
 from db import departments_collection, companies_collection
 from models.departments import Department
@@ -30,6 +30,7 @@ async def list_departments(company_id: str, user_and_type: tuple = Depends(get_c
 
         for department in departments:
             data.append({
+                "id": str(department["_id"]),
                 "name": department.get("name", ""),
                 "hod": department.get("hod", ""),
                 "staffs": department.get("staffs", ""), #work around either not returning this field or returning full names
@@ -69,6 +70,62 @@ async def create_department(company_id: str, department_request: DepartmentCreat
         await companies_collection.update_one({"registration_number": company_id}, {"$push": {"departments": department_instance.name}})
 
         return {"message": "Department created successfully"}
+    
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An error occured - {e}")
+
+
+@router.put("/{department_id}/edit-department")
+async def edit_department(department_id: str, company_id: str, department_request: DepartmentCreate, user_and_type: tuple = Depends(get_current_user)):
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise get_user_exception()
+    
+    try:
+        company = await companies_collection.find_one({"registration_number": company_id})
+        if not company:
+            raise get_unknown_entity_exception()
+
+        if company.get("registration_number") != user.get("company_id"):
+            raise get_user_exception()
+        
+        department = await departments_collection.find_one({"_id": ObjectId(department_id)})
+        
+        update_data = {k:v for k, v in department_request.model_dump().items() if v is not None}
+        if not update_data:
+            raise HTTPException(status_code=400, details="No data provided to update")
+        
+        data = await departments_collection.update_one({"_id": department["_id"]}, {"$set": update_data})
+        if data.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Department not found")
+        
+        return {"message": "Department updated successfully"}
+    
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An error occured - {e}")
+        
+
+@router.delete("/{department_id}/delete-department")
+async def delete_department(department_id: str, company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise get_user_exception()
+    
+    try:
+        company = await companies_collection.find_one({"registration_number": company_id})
+        if not company:
+            raise get_unknown_entity_exception()
+
+        if company.get("registration_number") != user.get("company_id"):
+            raise get_user_exception()
+        
+        department = await departments_collection.find_one({"_id": ObjectId(department_id)})
+        
+        data = await departments_collection.delete_one({"_id": data["_id"]})
+        if data.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Department not found")
+        
+        return {"message": "Department deleted successfully"}
     
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An error occured - {e}")

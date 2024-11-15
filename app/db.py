@@ -10,3 +10,4 @@ companies_collection = db.companies
 admins_collection = db.admins
 employees_collection = db.employees
 random_codes_collection = db.random_codes
+departments_collection = db.departments

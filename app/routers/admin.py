@@ -1,10 +1,8 @@
 from datetime import datetime, date
 import secrets
 import string
-from typing import Dict, Literal
-from fastapi import APIRouter, Depends, Form, HTTPException
-from fastapi.responses import JSONResponse
-from db import companies_collection, admins_collection, employees_collection
+from fastapi import APIRouter, Depends, HTTPException
+from db import companies_collection, admins_collection, employees_collection, departments_collection
 from schemas.admin import CreateAdmin
 from models.admins import Admin
 from schemas.employee import CreateEmployeeCredentials, CreateEmployee
@@ -19,6 +17,17 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str):
     company = await companies_collection.find_one({"registration_number": company_id})
     if not company:
         raise HTTPException(status_code=400, detail="Company not found")
+    
+    existing_admin = await admins_collection.find_one({
+    "$or": [
+        {"company_id": company_id},
+        {"email": admin_obj.email}
+        ]
+        })
+    
+    if existing_admin:
+        raise HTTPException(status_code=400, detail="Admin already registered")
+    
     
     if company["admin_creation_code"] != admin_obj.admin_code:
         raise HTTPException(status_code=401, detail="Invalid admin creation code")
@@ -102,9 +111,14 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
     if user_type != "admin":
         raise HTTPException(status_code=401, detail="Unauthorized user!")
     
-    existing_employee = await employees_collection.find_one({"employee_id": employee_request.employee_id})
+    existing_employee = await employees_collection.find_one({
+    "$or": [
+        {"employee_id": employee_request.employee_id},
+        {"email": employee_request.email}
+        ]
+        })
     if existing_employee:
-        raise HTTPException(status_code=400, detail="Employee with ID already exits")
+        raise HTTPException(status_code=400, detail="Employee already exits")
     
     employee_pwd = generate_password(8)
 
@@ -122,6 +136,22 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
 
     await companies_collection.update_one({"registration_number": company_id}, {"$inc": {"staff_size": 1}})
 
+    # add new employee_id to department db
+    if employee_instance.department:
+        employee_department = employee_instance.department
+        employee_id = employee_instance.employee_id
+
+        updated_department = await departments_collection.update_one(
+            {"name": employee_department},
+            {
+                "$push": {"staffs": employee_id},
+                "$inc": {"staff_size": 1}
+            },
+            upsert=False
+            )
+        if updated_department.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Department not found")
+        
     data = {"employee_id": employee_instance.employee_id, "password": employee_pwd}
 
     return {"message": "Employee account created successfully", "data": data}
