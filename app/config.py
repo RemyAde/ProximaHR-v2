@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     PROJECT_TITLE: str
     MONGODB_URL: str
     DEV_URL: str
+    PRODUCTION_MODE: bool
     SECRET_KEY: str
     ALGORITHM: str
     SMTP_USER: str
