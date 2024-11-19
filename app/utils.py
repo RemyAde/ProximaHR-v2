@@ -1,4 +1,5 @@
 import random
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import BackgroundTasks, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
@@ -24,6 +25,8 @@ smtp_user = settings.SMTP_USER
 smtp_pwd = settings.SMTP_USER_PWD
 smtp_host = settings.SMTP_HOST
 smtp_port = settings.SMTP_PORT
+
+scheduler = BackgroundScheduler()
 
 
 class Token(BaseModel):
@@ -190,3 +193,19 @@ async def verify_verification_code(email: str, verification_code: int):
             print("user_code", verification_code)
             print("retrieved-code", code_to_verify.get("code"))
         raise HTTPException(status_code=400, detail=f"An error occurred - {e}")
+    
+
+def revert_suspensions():
+    now = datetime.now(UTC)
+    employees = employees_collection.find({"employment_status": "suspended"})
+    for employee in employees:
+        if "suspension" in employee:
+            end_date = employee["suspension"]["end_date"]
+            if end_date and datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%SZ") <= now:
+                employees_collection.update_one(
+                    {"employee_id": employee["employee_id"]},
+                    {"$set": {"employment_status": "active"}, "$unset": {"suspension": ""}}
+                )
+
+scheduler.add_job(revert_suspensions, "interval", hours=1)  # Run every hour
+scheduler.start()

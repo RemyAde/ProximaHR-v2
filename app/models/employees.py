@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Dict
 from datetime import date
 
 UTC = timezone.utc
@@ -31,4 +31,5 @@ class Employee(BaseModel):
     leave_days = Optional[int] = None
     profile_image: Optional[str] = None
     employment_status: str = "active" # or inactive or suspended
+    # suspension: Optional[Dict] = {}
     date_created: datetime = datetime.now(UTC)
