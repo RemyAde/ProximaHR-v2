@@ -53,14 +53,14 @@ async def get_events(company_id:str, user_and_type: tuple = Depends(get_current_
     if str(company.get("registration_number")) != str(user.get("company_id")):
         raise get_user_exception()
     
-    upcoming_birthdays = await get_upcoming_events_for_the_month(event_collection=employees_collection, company_id=company_id, date_field="dob", event_type="birthday")
+    upcoming_birthdays = await get_upcoming_events_for_the_month(event_collection=employees_collection, company_id=company_id, date_field="date_of_birth", event_type="birthday")
     birthday_count = len(upcoming_birthdays)
 
     data.update(
         {"birthday_count": birthday_count, "birthdays": upcoming_birthdays}
     )
 
-    upcoming_anniversaries = await get_upcoming_events_for_the_month(event_collection=employees_collection, company_id=company_id, date_field="hire_date", event_type="anniversary")
+    upcoming_anniversaries = await get_upcoming_events_for_the_month(event_collection=employees_collection, company_id=company_id, date_field="employment_date", event_type="anniversary")
     anniversary_count = len(upcoming_anniversaries)
 
     total_event_count = birthday_count + anniversary_count

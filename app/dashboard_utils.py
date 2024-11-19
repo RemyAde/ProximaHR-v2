@@ -6,7 +6,7 @@ from typing import List, Dict, Union
 async def get_upcoming_events_for_the_month(
     event_collection,  # The MongoDB collection
     company_id: str,   # The ID of the company to filter by
-    date_field: str,   # Field name for date (either "dob" or "hire_date")
+    date_field: str,   # Field name for date (either "date_of_birth" or "employment_date")
     event_type: str    # Type of event ("birthday" or "anniversary")
 ) -> List[Dict[str, Union[str, str]]]:
     """
@@ -63,7 +63,7 @@ async def get_upcoming_events_for_the_month(
         }
         
         # Calculate years of service if it's an anniversary
-        if event_type.lower() == "anniversary" and date_field == "hire_date":
+        if event_type.lower() == "anniversary" and date_field == "employment_date":
             hire_date = employee[date_field]
             years_of_service = now.year - hire_date.year
             if (now.month, now.day) < (hire_date.month, hire_date.day):

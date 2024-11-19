@@ -33,7 +33,7 @@ async def get_all_employees(company_id: str, page: int = 1, page_size: int = 10,
 
         skip = (page - 1) * page_size
         
-        employees_list = await employees_collection.find({"company_id": company_id}).sort("hire_date", 1).skip(skip).limit(page_size).to_list(length=page_size)
+        employees_list = await employees_collection.find({"company_id": company_id}).sort("employment_date", 1).skip(skip).limit(page_size).to_list(length=page_size)
         
         for employee in employees_list:
             data.append({

@@ -120,8 +120,10 @@ async def delete_department(department_id: str, company_id: str, user_and_type: 
             raise get_user_exception()
         
         department = await departments_collection.find_one({"_id": ObjectId(department_id)})
+        if not department:
+            raise get_unknown_entity_exception()
         
-        data = await departments_collection.delete_one({"_id": data["_id"]})
+        data = await departments_collection.delete_one({"_id": department["_id"]})
         if data.matched_count == 0:
             raise HTTPException(status_code=404, detail="Department not found")
         
