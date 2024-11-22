@@ -123,8 +123,8 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
     employee_pwd = generate_password(8)
 
     # Convert dob (date of birth) to datetime if it's a date object
-    if isinstance(employee_request.dob, date):
-        employee_request.dob = datetime.combine(employee_request.dob, datetime.min.time())
+    if isinstance(employee_request.date_of_birth, date):
+        employee_request.date_of_birth = datetime.combine(employee_request.date_of_birth, datetime.min.time())
 
     employee_request_dict = employee_request.model_dump(exclude_unset=True)
     employee_request_dict["company_id"] = user["company_id"]
@@ -138,11 +138,11 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
 
     # add new employee_id to department db
     if employee_instance.department:
-        employee_department = employee_instance.department
+        employee_department = employee_instance.department # use department id
         employee_id = employee_instance.employee_id
 
         updated_department = await departments_collection.update_one(
-            {"name": employee_department},
+            {"name": employee_department}, #use department id
             {
                 "$push": {"staffs": employee_id},
                 "$inc": {"staff_size": 1}

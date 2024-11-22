@@ -21,14 +21,14 @@ class Employee(BaseModel):
     job_title: Optional[str] = None
     department: Optional[str] = None
     role: Optional[str] = None
-    work_location = Optional[str] = None
+    work_location: Optional[str] = None
     employment_date: Optional[datetime] = None
     salary: Optional[int] = None
     payment_frequency: Optional[str] = None
     bonus_eligibility: Optional[str] = None
     pension_plan: Optional[str] = None
     health_insurance: Optional[str] = None
-    leave_days = Optional[int] = None
+    leave_days: Optional[int] = None
     profile_image: Optional[str] = None
     employment_status: str = "active" # or inactive or suspended
     # suspension: Optional[Dict] = {}

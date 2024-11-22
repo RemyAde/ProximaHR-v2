@@ -19,7 +19,7 @@ app.include_router(auth.router, prefix="/company", tags=["company"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(employee.router, prefix="/employee", tags=["employee"])
 app.include_router(department.router, prefix="/departments", tags=["department"])
-app.include_router(employee_management.router, prefix="/employee_management", tags=["employee_management"])
+app.include_router(employee_management.router, prefix="/employee-management", tags=["employee_management"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 
 # Middleware

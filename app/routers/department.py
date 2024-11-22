@@ -102,7 +102,7 @@ async def edit_department(department_id: str, company_id: str, department_reques
         return {"message": "Department updated successfully"}
     
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An error occured - {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An error occured - {e}")
         
 
 @router.delete("/{department_id}/delete-department")
@@ -123,11 +123,9 @@ async def delete_department(department_id: str, company_id: str, user_and_type: 
         if not department:
             raise get_unknown_entity_exception()
         
-        data = await departments_collection.delete_one({"_id": department["_id"]})
-        if data.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Department not found")
+        await departments_collection.delete_one({"_id": department["_id"]})
         
         return {"message": "Department deleted successfully"}
     
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An error occured - {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An error occured - {e}")
