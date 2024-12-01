@@ -1,4 +1,6 @@
 import random
+import string
+import secrets
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import BackgroundTasks, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer
@@ -32,6 +34,16 @@ scheduler = BackgroundScheduler()
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+def generate_password(length: int = 8) -> str:
+    # Define the allowed characters: uppercase, lowercase, and digits
+    allowed_characters = string.ascii_letters + string.digits
+    
+    # Use secrets.choice to securely choose random characters
+    password = ''.join(secrets.choice(allowed_characters) for _ in range(length))
+    
+    return password
 
 
 def hash_password(password: str) -> str:
