@@ -11,5 +11,5 @@ class Admin(BaseModel):
     email: str
     password: str
     company_id: str
-    role: Optional[str] = None
+    role: str = "admin"
     date_created: datetime = datetime.now(UTC)
