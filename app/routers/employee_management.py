@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+from pymongo.errors import PyMongoError
 from fastapi import APIRouter, Depends, status, HTTPException
 from schemas.employee import CreateEmployee
 from models.employees import Employee
@@ -121,45 +122,61 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
         raise HTTPException(status_code=401, detail="Unauthorized user!")
     
     existing_employee = await employees_collection.find_one({
-    "$or": [
-        {"employee_id": employee_request.employee_id},
-        {"email": employee_request.email}
+        "$or": [
+            {"employee_id": employee_request.employee_id},
+            {"email": employee_request.email}
         ]
-        })
+    })
     if existing_employee:
-        raise HTTPException(status_code=400, detail="Employee already exits")
+        raise HTTPException(status_code=400, detail="Employee already exists")
     
     employee_pwd = generate_password(8)
 
+    # Create the employee data
     employee_request_dict = employee_request.model_dump(exclude_unset=True)
     employee_request_dict["company_id"] = user["company_id"]
     employee_request_dict["password"] = hash_password(employee_pwd)
     employee_request_dict["date_of_birth"] = datetime.combine(employee_request.date_of_birth, datetime.min.time())
 
-    employee_instance = Employee(**employee_request_dict)
+    # Start a session and transaction
+    async with await client.start_session() as session:
+        async with session.start_transaction():
+            try:
+                # Insert the employee
+                employee_instance = Employee(**employee_request_dict)
+                await employees_collection.insert_one(employee_instance.model_dump(), session=session)
 
-    await employees_collection.insert_one(employee_instance.model_dump())
+                # Validate and update the department
+                if employee_instance.department:
+                    updated_department = await departments_collection.update_one(
+                        {"name": employee_instance.department},  # Use department name or ID
+                        {
+                            "$push": {"staffs": employee_instance.employee_id},
+                            "$inc": {"staff_size": 1}
+                        },
+                        session=session,
+                        upsert=False
+                    )
+                    if updated_department.matched_count == 0:
+                        raise HTTPException(status_code=404, detail="Department not found")
+                
+                # Increment the company's staff size
+                await companies_collection.update_one(
+                    {"registration_number": company_id}, 
+                    {"$inc": {"staff_size": 1}},
+                    session=session
+                )
 
-    await companies_collection.update_one({"registration_number": company_id}, {"$inc": {"staff_size": 1}})
+                # Commit the transaction
+                await session.commit_transaction()
 
-    # add new employee_id to department db
-    if employee_instance.department:
-        employee_department = employee_instance.department # use department id
-        employee_id = employee_instance.employee_id
-
-        updated_department = await departments_collection.update_one(
-            {"name": employee_department}, #use department id
-            {
-                "$push": {"staffs": employee_id},
-                "$inc": {"staff_size": 1}
-            },
-            upsert=False
-            )
-        if updated_department.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Department not found")
-        
+            except PyMongoError as e:
+                # Abort the transaction if an error occurs
+                await session.abort_transaction()
+                raise HTTPException(status_code=500, detail=f"Transaction failed: {str(e)}")
+    
+    # Return success response
     data = {"employee_id": employee_instance.employee_id, "password": employee_pwd}
-
     return {"message": "Employee account created successfully", "data": data}
 
 
