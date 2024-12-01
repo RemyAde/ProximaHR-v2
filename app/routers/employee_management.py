@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from pymongo.errors import PyMongoError
 from fastapi import APIRouter, Depends, status, HTTPException
-from schemas.employee import CreateEmployee
+from schemas.employee import CreateEmployee, EditEmployee
 from models.employees import Employee
 from db import client, employees_collection, companies_collection, departments_collection
 from utils import get_current_user, generate_password, hash_password
@@ -178,6 +178,51 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
     # Return success response
     data = {"employee_id": employee_instance.employee_id, "password": employee_pwd}
     return {"message": "Employee account created successfully", "data": data}
+
+
+@router.put("/edit-employee/{employee_id}")
+async def edit_employee_profile(
+    employee_id: str,
+    employee_updates: EditEmployee,
+    user_and_type: tuple = Depends(get_current_user)
+):
+    user, user_type = user_and_type
+
+    # Check if user is authorized
+    if user_type != "admin":
+        raise HTTPException(status_code=401, detail="Unauthorized user!")
+
+    # Find the employee document
+    employee = await employees_collection.find_one({"employee_id": employee_id})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    # Ensure the admin belongs to the same company
+    if employee["company_id"] != user["company_id"]:
+        raise HTTPException(status_code=403, detail="You are not authorized to edit this employee's profile")
+
+    # Prepare the update payload, excluding unset fields
+    update_data = employee_updates.model_dump(exclude_unset=True)
+    
+    if update_data["date_of_birth"]:
+        update_data["date_of_birth"] = datetime.combine(employee_updates.date_of_birth, datetime.min.time())
+
+    if update_data["employment_date"]:
+        update_data["employment_date"] = datetime.combine(employee_updates.employment_date, datetime.min.time())
+
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data provided to update")
+
+    # Update the employee document
+    result = await employees_collection.update_one(
+        {"employee_id": employee_id},
+        {"$set": update_data}
+    )
+
+    if result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Failed to update employee profile")
+
+    return {"message": "Employee profile updated successfully", "updated_fields": update_data}
 
 
 @router.post("/suspend-employee/{employee_id}")
