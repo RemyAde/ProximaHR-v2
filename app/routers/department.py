@@ -1,7 +1,7 @@
 from pymongo import ASCENDING
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status 
-from db import departments_collection, companies_collection
+from db import departments_collection, companies_collection, employees_collection
 from models.departments import Department
 from schemas.department import DepartmentCreate
 from utils import get_current_user
@@ -44,35 +44,81 @@ async def list_departments(company_id: str, user_and_type: tuple = Depends(get_c
     
 
 @router.post("/create-department")
-async def create_department(company_id: str, department_request: DepartmentCreate, user_and_type: tuple = Depends(get_current_user)):
+async def create_department(
+    company_id: str, 
+    department_request: DepartmentCreate, 
+    user_and_type: tuple = Depends(get_current_user)
+):
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()
     
     try:
+        # Verify the company exists
         company = await companies_collection.find_one({"registration_number": company_id})
         if not company:
             raise get_unknown_entity_exception()
 
+        # Ensure the user is part of the company
         if company.get("registration_number") != user.get("company_id"):
             raise get_user_exception()
         
-        existing_department = await departments_collection.find_one({"name": department_request.name})
+        # Check if the department name (case insensitive) already exists
+        existing_department = await departments_collection.find_one({
+            "name": {"$regex": f"^{department_request.name}$", "$options": "i"},
+            "company_id": company_id
+            })
         if existing_department:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department name already exists")
         
-        deparment_obj_dict = department_request.model_dump(exclude_unset=True)
-        deparment_obj_dict["company_id"] = company_id
-        department_instance = Department(**deparment_obj_dict)
+        # Extract department data
+        department_obj_dict = department_request.model_dump(exclude_unset=True)
+        department_obj_dict["company_id"] = company_id
+        hod_id = department_obj_dict.get("hod")
+        staff_ids = department_obj_dict.get("staffs", [])
 
+        # Validate HOD
+        if hod_id:
+            hod_employee = await employees_collection.find_one({"employee_id": hod_id, "company_id": company_id})
+            if not hod_employee:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"HOD with employee ID {hod_id} is not a valid employee of the company"
+                )
+            if hod_id not in staff_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"HOD with employee ID {hod_id} must also be in the list of staff members"
+                )
+
+        # Validate all staff IDs
+        for staff_id in staff_ids:
+            staff_employee = await employees_collection.find_one({"employee_id": staff_id, "company_id": company_id})
+            if not staff_employee:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"Staff member with employee ID {staff_id} is not a valid employee of the company"
+                )
+
+        # Create and insert department
+        department_instance = Department(**department_obj_dict)
         await departments_collection.insert_one(department_instance.model_dump())
 
-        await companies_collection.update_one({"registration_number": company_id}, {"$push": {"departments": department_instance.name}})
+        # Update company with the new department
+        await companies_collection.update_one(
+            {"registration_number": company_id}, 
+            {"$push": {"departments": department_instance.name}}
+        )
 
         return {"message": "Department created successfully"}
     
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An error occured - {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"An error occurred: {str(e)}"
+        )
 
 
 @router.put("/{department_id}/edit-department")
