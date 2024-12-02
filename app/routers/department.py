@@ -43,7 +43,7 @@ async def list_departments(company_id: str, user_and_type: tuple = Depends(get_c
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An error occured - {e}")
     
 
-@router.post("/create-department")
+@router.post("/create-department", status_code=status.HTTP_201_CREATED)
 async def create_department(
     company_id: str, 
     department_request: DepartmentCreate, 

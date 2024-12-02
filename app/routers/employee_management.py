@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from pymongo.errors import PyMongoError
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from schemas.employee import CreateEmployee, EditEmployee
 from models.employees import Employee
 from db import client, employees_collection, companies_collection, departments_collection
@@ -18,12 +18,16 @@ async def list_employees(
     page: int = 1,
     page_size: int = 10,
     department_name: Optional[str] = None,  # Optional department name query parameter
+    name: Optional[str] = Query(
+        None,
+        description="Search by employee's first name, last name, or employee ID."
+    ),  # Optional name/employee_id query parameter with documentation
     user_and_type: tuple = Depends(get_current_user),
 ):
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()
-    
+
     try: 
         data = []
 
@@ -50,7 +54,14 @@ async def list_employees(
         }
         
         if department_name:  # Add department filter if provided
-            query_filter["department"] = department_name
+            query_filter["department"] = {"$regex": f"^{department_name}$", "$options": "i"}
+        
+        if name:  # Add name/employee_id search filter
+            query_filter["$or"] = [
+                {"first_name": {"$regex": name, "$options": "i"}},  # Case-insensitive search for first_name
+                {"last_name": {"$regex": name, "$options": "i"}},   # Case-insensitive search for last_name
+                {"employee_id": {"$regex": name, "$options": "i"}}  # Match employee_id
+            ]
 
         # Fetch filtered employees
         employees_list = await employees_collection.find(query_filter).sort("employment_date", 1).skip(skip).limit(page_size).to_list(length=page_size)
@@ -70,6 +81,7 @@ async def list_employees(
     
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An exception has occurred - {e}")
+
 
 
 @router.get("/employee/{employee_id}")
