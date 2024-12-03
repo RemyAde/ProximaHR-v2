@@ -198,9 +198,9 @@ async def get_department_details(
 
 @router.put("/{department_id}/edit-department")
 async def edit_department(
-    company_id: str, 
-    department_request: DepartmentEdit, 
-    department_id: str = Path(..., description="ID of the department you want to edit"), 
+    company_id: str,
+    department_request: DepartmentEdit,
+    department_id: str = Path(..., description="ID of the department you want to edit"),
     user_and_type: tuple = Depends(get_current_user)
 ):
     user, user_type = user_and_type
@@ -222,7 +222,10 @@ async def edit_department(
         if not department:
             raise HTTPException(status_code=404, detail="Department not found")
 
-        # Check if the hod (Head of Department) is being updated
+        # Initialize the update data dictionary
+        update_data = {}
+
+        # Handle HOD (Head of Department) update
         new_hod_id = department_request.hod
         if new_hod_id:
             # Validate if the HOD is a valid employee in the company
@@ -233,7 +236,7 @@ async def edit_department(
                     detail=f"HOD with employee ID {new_hod_id} is not a valid employee of the company"
                 )
             
-            # Ensure that the HOD is not already a staff member (if needed)
+            # Ensure that the HOD is part of the department's staff
             if new_hod_id not in department.get("staffs", []):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST, 
@@ -254,7 +257,10 @@ async def edit_department(
                 {"$set": {"position": "department head"}}
             )
 
-        # Validate the addition of new staff members
+            # Update the HOD in the department
+            update_data["hod"] = new_hod_id
+
+        # Validate addition of new staff members
         staff_ids_to_add = department_request.staffs
         if staff_ids_to_add:
             # Check if each staff member exists and is valid
@@ -265,8 +271,10 @@ async def edit_department(
                         status_code=status.HTTP_400_BAD_REQUEST, 
                         detail=f"Staff member with employee ID {staff_id} is not a valid employee of the company"
                     )
+            # Add the new staff members
+            update_data["staffs"] = list(set(department.get("staffs", [])) | set(staff_ids_to_add))
 
-        # Validate the removal of staff members
+        # Validate removal of staff members
         staff_ids_to_remove = department_request.remove_staffs
         if staff_ids_to_remove:
             # Check if the employees to be removed are actually in the current staff list
@@ -276,49 +284,29 @@ async def edit_department(
                         status_code=status.HTTP_400_BAD_REQUEST, 
                         detail=f"Staff member with employee ID {staff_id} is not in the department"
                     )
-
-        # Prepare the update data
-        update_data = {k: v for k, v in department_request.model_dump().items() if v is not None}
-        if not update_data:
-            raise HTTPException(status_code=400, detail="No data provided to update")
-        
-        # Update staff list by adding and removing employees
-        if staff_ids_to_add:
-            # Add the new staff members
-            update_data["staffs"] = list(set(department.get("staffs", [])) | set(staff_ids_to_add))  # Union of current and new staff
-
-        if staff_ids_to_remove:
             # Remove the staff members
-            update_data["staffs"] = [staff for staff in department.get("staffs", []) if staff not in staff_ids_to_remove]
+            update_data["staffs"] = [
+                staff for staff in department.get("staffs", []) if staff not in staff_ids_to_remove
+            ]
 
-        # Ensure the "staffs" field is not overwritten to an empty value if not updated
+        # If `staffs` wasn't explicitly updated, retain the existing value
         if "staffs" not in update_data:
             update_data["staffs"] = department.get("staffs", [])
 
-        # Update the department with new data
-        data = await departments_collection.update_one({"_id": department["_id"]}, {"$set": update_data})
-        if data.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Department not found")
+        # Update the department in the database
+        await departments_collection.update_one({"_id": department["_id"]}, {"$set": update_data})
 
-        # Recalculate the staff size
-        updated_department = await departments_collection.find_one({"_id": ObjectId(department_id)})
-        new_staff_size = len(updated_department.get("staffs", []))
-
-        # Update the department's staff size
+        # Recalculate and update the department's staff size
+        new_staff_size = len(update_data["staffs"])
         await departments_collection.update_one({"_id": department["_id"]}, {"$set": {"staff_size": new_staff_size}})
-
-        # Update the company's staff size (if necessary)
-        await companies_collection.update_one(
-            {"registration_number": company_id},
-            {"$set": {"staff_size": new_staff_size}}
-        )
-
+        
+        # Return success response
         return {"message": "Department updated successfully", "staff_size": new_staff_size}
 
-    
+    except HTTPException as e:
+        raise e
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An error occurred - {e}")
-
         
 
 @router.delete("/{department_id}/delete-department")
