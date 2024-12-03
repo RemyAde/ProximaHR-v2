@@ -289,6 +289,13 @@ async def edit_department(
                 staff for staff in department.get("staffs", []) if staff not in staff_ids_to_remove
             ]
 
+            # Update department field for removed employees
+            for staff_id in staff_ids_to_remove:
+                await employees_collection.update_one(
+                    {"employee_id": staff_id, "company_id": company_id},
+                    {"$set": {"department": None}}
+                )
+
         # If `staffs` wasn't explicitly updated, retain the existing value
         if "staffs" not in update_data:
             update_data["staffs"] = department.get("staffs", [])
