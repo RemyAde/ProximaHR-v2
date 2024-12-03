@@ -21,6 +21,7 @@ class Employee(BaseModel):
     job_title: Optional[str] = None
     department: Optional[str] = None
     role: Optional[str] = None
+    work_mode: Optional[str] = None
     work_location: Optional[str] = None
     employment_date: Optional[datetime] = None
     salary: Optional[int] = None
@@ -30,6 +31,7 @@ class Employee(BaseModel):
     health_insurance: Optional[str] = None
     leave_days: Optional[int] = None
     profile_image: Optional[str] = None
+    position: str = "member"
     employment_status: str = "active" # or inactive or suspended
     # suspension: Optional[Dict] = {}
     date_created: datetime = datetime.now(UTC)

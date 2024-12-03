@@ -1,9 +1,9 @@
 from pymongo import ASCENDING
 from bson import ObjectId
-from fastapi import APIRouter, Depends, HTTPException, status 
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from db import departments_collection, companies_collection, employees_collection
 from models.departments import Department
-from schemas.department import DepartmentCreate
+from schemas.department import DepartmentCreate, DepartmentEdit
 from utils import get_current_user
 from exceptions import get_user_exception, get_unknown_entity_exception
 
@@ -29,12 +29,23 @@ async def list_departments(company_id: str, user_and_type: tuple = Depends(get_c
         departments = await departments_collection.find({"company_id": company_id}).sort("name", ASCENDING).to_list(length=None)
 
         for department in departments:
+
+            hod_details = None
+            if department.get("hod"):
+                hod_filter = {"employee_id": department["hod"], "company_id": company_id}
+                hod = await employees_collection.find_one(hod_filter)
+                if hod:
+                    hod_details = {
+                        "first_name": hod.get("first_name", ""),
+                        "last_name": hod.get("last_name", ""),
+                    }
+
             data.append({
                 "id": str(department["_id"]),
                 "name": department.get("name", ""),
-                "hod": department.get("hod", ""),
-                "staffs": department.get("staffs", ""), #work around either not returning this field or returning full names
-                "staff_size": department.get("staff_size", "")
+                "staff_size": department.get("staff_size", ""),
+                "hod": hod_details,
+                "description": department.get("description", "")
             })
 
         return {"departments": data}
@@ -67,7 +78,7 @@ async def create_department(
         existing_department = await departments_collection.find_one({
             "name": {"$regex": f"^{department_request.name}$", "$options": "i"},
             "company_id": company_id
-            })
+        })
         if existing_department:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department name already exists")
         
@@ -76,6 +87,9 @@ async def create_department(
         department_obj_dict["company_id"] = company_id
         hod_id = department_obj_dict.get("hod")
         staff_ids = department_obj_dict.get("staffs", [])
+
+        # Set staff_size based on the number of staff members
+        department_obj_dict["staff_size"] = len(staff_ids)
 
         # Validate HOD
         if hod_id:
@@ -90,6 +104,12 @@ async def create_department(
                     status_code=status.HTTP_400_BAD_REQUEST, 
                     detail=f"HOD with employee ID {hod_id} must also be in the list of staff members"
                 )
+        
+            # Update the HOD's position to "department head"
+            await employees_collection.update_one(
+                {"employee_id": hod_id, "company_id": company_id},
+                {"$set": {"position": "department head"}}
+            )
 
         # Validate all staff IDs
         for staff_id in staff_ids:
@@ -104,12 +124,6 @@ async def create_department(
         department_instance = Department(**department_obj_dict)
         await departments_collection.insert_one(department_instance.model_dump())
 
-        # Update company with the new department
-        await companies_collection.update_one(
-            {"registration_number": company_id}, 
-            {"$push": {"departments": department_instance.name}}
-        )
-
         return {"message": "Department created successfully"}
     
     except HTTPException as e:
@@ -121,34 +135,190 @@ async def create_department(
         )
 
 
+@router.get("/department-details")
+async def get_department_details(
+    company_id: str,
+    department_name: str = Query(..., description="Name of the department to fetch details for."),
+    user_and_type: tuple = Depends(get_current_user),
+):
+    """
+    Fetches detailed information about a department, including the department's details and 
+    the head of department's details such as first name, last name, email, phone number, 
+    and work location.
+    """
+    user, user_type = user_and_type
+
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="Unauthorized user!")
+
+    # Check if the company exists
+    company_filter = {"registration_number": company_id}
+    company = await companies_collection.find_one(company_filter)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    if company.get("registration_number") != user.get("company_id"):
+        raise HTTPException(status_code=403, detail="Unauthorized to access this company.")
+
+    # Check if the department exists
+    department_filter = {"name": {"$regex": f"^{department_name}$", "$options": "i"}, "company_id": company_id}
+    department = await departments_collection.find_one(department_filter)
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
+    # Get department head details if `hod` field is provided
+    hod_details = None
+    if department.get("hod"):
+        hod_filter = {"employee_id": department["hod"], "company_id": company_id}
+        hod = await employees_collection.find_one(hod_filter)
+        if hod:
+            hod_details = {
+                "first_name": hod.get("first_name", ""),
+                "last_name": hod.get("last_name", ""),
+                "email": hod.get("email", ""),
+                "phone_number": hod.get("phone_number", ""),
+                "work_location": hod.get("work_location", ""),
+            }
+
+    # consumer here hits list employees endpoint and query on department to get employee list
+
+    # Convert ObjectId to string
+    department_id = str(department["_id"]) if "_id" in department else None
+
+    # Build and return the department details
+    department_details = {
+        "department_id": department_id,
+        "department_name": department.get("name", ""),
+        "description": department.get("description", ""),
+        "hod_details": hod_details,  # None if no valid HOD exists
+    }
+
+    return {"message": "Department details fetched successfully.", "data": department_details}
+
+
 @router.put("/{department_id}/edit-department")
-async def edit_department(department_id: str, company_id: str, department_request: DepartmentCreate, user_and_type: tuple = Depends(get_current_user)):
+async def edit_department(
+    company_id: str, 
+    department_request: DepartmentEdit, 
+    department_id: str = Path(..., description="ID of the department you want to edit"), 
+    user_and_type: tuple = Depends(get_current_user)
+):
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()
     
     try:
+        # Verify the company exists
         company = await companies_collection.find_one({"registration_number": company_id})
         if not company:
             raise get_unknown_entity_exception()
 
+        # Ensure the user is part of the company
         if company.get("registration_number") != user.get("company_id"):
             raise get_user_exception()
         
+        # Fetch the department by its ID
         department = await departments_collection.find_one({"_id": ObjectId(department_id)})
-        
-        update_data = {k:v for k, v in department_request.model_dump().items() if v is not None}
+        if not department:
+            raise HTTPException(status_code=404, detail="Department not found")
+
+        # Check if the hod (Head of Department) is being updated
+        new_hod_id = department_request.hod
+        if new_hod_id:
+            # Validate if the HOD is a valid employee in the company
+            hod_employee = await employees_collection.find_one({"employee_id": new_hod_id, "company_id": company_id})
+            if not hod_employee:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"HOD with employee ID {new_hod_id} is not a valid employee of the company"
+                )
+            
+            # Ensure that the HOD is not already a staff member (if needed)
+            if new_hod_id not in department.get("staffs", []):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, 
+                    detail=f"HOD with employee ID {new_hod_id} must also be part of the staff members"
+                )
+            
+            # If there's a current HOD, update their position back to "member"
+            current_hod_id = department.get("hod")
+            if current_hod_id:
+                await employees_collection.update_one(
+                    {"employee_id": current_hod_id, "company_id": company_id},
+                    {"$set": {"position": "member"}}
+                )
+            
+            # Set the new HOD's position to "department head"
+            await employees_collection.update_one(
+                {"employee_id": new_hod_id, "company_id": company_id},
+                {"$set": {"position": "department head"}}
+            )
+
+        # Validate the addition of new staff members
+        staff_ids_to_add = department_request.staffs
+        if staff_ids_to_add:
+            # Check if each staff member exists and is valid
+            for staff_id in staff_ids_to_add:
+                staff_employee = await employees_collection.find_one({"employee_id": staff_id, "company_id": company_id})
+                if not staff_employee:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, 
+                        detail=f"Staff member with employee ID {staff_id} is not a valid employee of the company"
+                    )
+
+        # Validate the removal of staff members
+        staff_ids_to_remove = department_request.remove_staffs
+        if staff_ids_to_remove:
+            # Check if the employees to be removed are actually in the current staff list
+            for staff_id in staff_ids_to_remove:
+                if staff_id not in department.get("staffs", []):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, 
+                        detail=f"Staff member with employee ID {staff_id} is not in the department"
+                    )
+
+        # Prepare the update data
+        update_data = {k: v for k, v in department_request.model_dump().items() if v is not None}
         if not update_data:
-            raise HTTPException(status_code=400, details="No data provided to update")
+            raise HTTPException(status_code=400, detail="No data provided to update")
         
+        # Update staff list by adding and removing employees
+        if staff_ids_to_add:
+            # Add the new staff members
+            update_data["staffs"] = list(set(department.get("staffs", [])) | set(staff_ids_to_add))  # Union of current and new staff
+
+        if staff_ids_to_remove:
+            # Remove the staff members
+            update_data["staffs"] = [staff for staff in department.get("staffs", []) if staff not in staff_ids_to_remove]
+
+        # Ensure the "staffs" field is not overwritten to an empty value if not updated
+        if "staffs" not in update_data:
+            update_data["staffs"] = department.get("staffs", [])
+
+        # Update the department with new data
         data = await departments_collection.update_one({"_id": department["_id"]}, {"$set": update_data})
         if data.matched_count == 0:
             raise HTTPException(status_code=404, detail="Department not found")
-        
-        return {"message": "Department updated successfully"}
+
+        # Recalculate the staff size
+        updated_department = await departments_collection.find_one({"_id": ObjectId(department_id)})
+        new_staff_size = len(updated_department.get("staffs", []))
+
+        # Update the department's staff size
+        await departments_collection.update_one({"_id": department["_id"]}, {"$set": {"staff_size": new_staff_size}})
+
+        # Update the company's staff size (if necessary)
+        await companies_collection.update_one(
+            {"registration_number": company_id},
+            {"$set": {"staff_size": new_staff_size}}
+        )
+
+        return {"message": "Department updated successfully", "staff_size": new_staff_size}
+
     
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An error occured - {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An error occurred - {e}")
+
         
 
 @router.delete("/{department_id}/delete-department")

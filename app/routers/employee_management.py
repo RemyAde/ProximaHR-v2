@@ -74,6 +74,8 @@ async def list_employees(
                 "name": f"{employee['first_name']} {employee['last_name']}",
                 "job_title": employee.get("job_title", ""),
                 "department": employee.get("department", ""),
+                "work_mode": employee.get("work_mode", ""),
+                "position": employee.get("position", ""),
                 "employment_status": employee.get("employment_status", ""),
             })
 
@@ -81,7 +83,6 @@ async def list_employees(
     
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An exception has occurred - {e}")
-
 
 
 @router.get("/employee/{employee_id}")
