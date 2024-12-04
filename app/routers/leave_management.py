@@ -1,10 +1,10 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel, Field
-from typing import List
+from typing import Optional, List
 from bson import ObjectId
-from db import leaves_collection, companies_collection, employees_collection
+from db import leaves_collection, employees_collection
 from utils import get_current_user
-from exceptions import get_user_exception, get_unknown_entity_exception
+from exceptions import get_user_exception
 
 
 router = APIRouter(prefix="leaves", tags=["leaves"])
@@ -22,7 +22,15 @@ class LeaveList(BaseModel):
 
 
 @router.get("/", status_code=status.HTTP_200_OK, response_model=LeaveList)
-async def list_leaves(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def list_leaves(
+    company_id: str,
+    status: Optional[str] = Query(
+        None, 
+        description="search by pending, approved or rejected"
+        ),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    
     user, user_type = user_and_type
 
     if user_type != "admin":
@@ -38,9 +46,15 @@ async def list_leaves(company_id: str, user_and_type: tuple = Depends(get_curren
         leave_count = 0
         pending_leave_count = 0
         approved_leave_count = 0
-        rejected_leave_count = 0 
+        rejected_leave_count = 0
 
-        leaves = leaves_collection.find({"company_id": company_id})
+        # Build the filter for the query
+        query = {"company_id": company_id}
+        if status:
+            query["status"] = status
+
+        # Query leaves collection
+        leaves = leaves_collection.find(query)
 
         async for leave in leaves:
             leave_count += 1
@@ -50,7 +64,7 @@ async def list_leaves(company_id: str, user_and_type: tuple = Depends(get_curren
                 employee = await employees_collection.find_one(employee_filter)
                 if employee:
                     employee_details = {
-                        "name": f"{employee.get("first_name")} {employee.get("last_name")}",
+                        "name": f"{employee.get('first_name')} {employee.get('last_name')}",
                         "department": employee.get("department")
                     }
             
@@ -72,7 +86,6 @@ async def list_leaves(company_id: str, user_and_type: tuple = Depends(get_curren
                 "status": leave.get("status", ""),
                 "employee_details": employee_details
             })
-        
 
         return {
             "leave_count": leave_count,
@@ -83,7 +96,7 @@ async def list_leaves(company_id: str, user_and_type: tuple = Depends(get_curren
         }
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"An error has ocured - {e}")
+        raise HTTPException(status_code=400, detail=f"An error occurred - {e}")
     
 
 @router.post("/{leave_id}/approve_leave", status_code=status.HTTP_200_OK)
@@ -120,6 +133,8 @@ async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_curren
                 status_code=400,
                 detail="Unable to approve the leave; it may have already been approved"
             )
+
+        # implement function to subtract leave duration value from employees annual leave value
 
         return {"message": "Leave was successfully approved"}
     
