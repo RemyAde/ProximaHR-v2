@@ -22,11 +22,18 @@ class CreateEmployee(BaseModel):
     employment_date: Optional[date] = None
     work_mode: Optional[str] = None
     work_location: Optional[str] = None
-    salary: Optional[int] = None
+    base_salary: Optional[int] = None
     payment_frequency: Optional[str] = None
-    bonus_eligibility: Optional[str] = None
-    pension_plan: Optional[str] = None
-    leave_days: Optional[int] = None
+    overtime_hours_allowance: Optional[int] = 0
+    housing_allowance: Optional[int] = 0
+    transport_allowance: Optional[int] = 0
+    medical_allowance: Optional[int] = 0
+    health_insurance: Optional[str] = None
+    employee_pension_plan_percentage: Optional[int] = 0
+    employer_pension_plan_percentage: Optional[int] = 0
+    tax_deductions: Optional[int] = 0
+    retirement_fund: Optional[int] = 0
+    annual_leave_days: Optional[int] = 0
 
 
 class EditEmployee(BaseModel):

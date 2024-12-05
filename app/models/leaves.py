@@ -15,4 +15,5 @@ class Leave(BaseModel):
     additional_notes: Optional[str] = None
     status: str = "pending" # or approved/rejected
     created_at: datetime = datetime.now(UTC)
+    edited_at: Optional[datetime] = None
 

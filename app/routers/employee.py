@@ -5,6 +5,7 @@ from models.employees import Employee
 from models.leaves import Leave
 from schemas.leave import CreateLeave
 from utils import get_current_user
+from exceptions import get_unknown_entity_exception
 
 UTC = timezone.utc
 
@@ -22,18 +23,26 @@ async def create_leave(
     if company_id != user.get("company_id"):
         raise HTTPException(status_code=403, detail="You are not authorized to access this page")
 
+    employee = await employees_collection.find_one({"company_id": company_id, "employee_id": user.get("employee_id")})
+    if not employee:
+        raise get_unknown_entity_exception()
+    leave_days = employee.get("annual_leave_days")
+
     leave_dict = leave_request.model_dump(exclude_unset=True)
     leave_dict["company_id"] = user["company_id"]
     leave_dict["employee_id"] = user["employee_id"]
 
     # Convert dates to datetime objects
-    leave_dict["start_date"] = datetime.combine(leave_request.start_date, datetime.min.time())
-    leave_dict["end_date"] = datetime.combine(leave_request.end_date, datetime.min.time())
+    leave_dict["start_date"] = datetime.combine(leave_request.start_date, datetime.min.time(), UTC)
+    leave_dict["end_date"] = datetime.combine(leave_request.end_date, datetime.min.time(), UTC)
 
     # Validate leave duration
     leave_duration = (leave_dict["end_date"] - leave_dict["start_date"]).days + 1  # Inclusive of start date
     if leave_duration <= 0:
         raise HTTPException(status_code=400, detail="End date must be after the start date")
+
+    if leave_duration > leave_days:
+        raise HTTPException(status_code=400, detail="You do not have enough leave days left")
 
     # Ensure leave is not requested for past dates
     if leave_dict["start_date"] < datetime.now(UTC):
@@ -42,20 +51,28 @@ async def create_leave(
     leave_dict["duration"] = leave_duration
 
     # Check for overlapping leaves
-    overlapping_leaves = await leaves_collection.find_one({
+    # overlapping_leaves = await leaves_collection.find_one({
+    #     "employee_id": user["employee_id"],
+    #     "status": {"$in": ["pending", "approved"]},
+    #     "$or": [
+    #         {"start_date": {"$lte": leave_dict["end_date"]}, "end_date": {"$gte": leave_dict["start_date"]}},
+    #         {"start_date": {"$gte": leave_dict["start_date"]}, "end_date": {"$lte": leave_dict["end_date"]}},
+    #     ]
+    # })
+
+    # if overlapping_leaves:
+    #     raise HTTPException(status_code=400, detail="You already have a pending or approved leave within this date range")
+    
+    existing_leave = await leaves_collection.find_one({
         "employee_id": user["employee_id"],
         "status": {"$in": ["pending", "approved"]},
-        "$or": [
-            {"start_date": {"$lte": leave_dict["end_date"]}, "end_date": {"$gte": leave_dict["start_date"]}},
-            {"start_date": {"$gte": leave_dict["start_date"]}, "end_date": {"$lte": leave_dict["end_date"]}},
-        ]
+        "end_date": {"$gte": datetime.now(timezone.utc)}  # Ongoing approved leave
     })
-
-    if overlapping_leaves:
-        raise HTTPException(status_code=400, detail="You already have a pending or approved leave within this date range")
+    if existing_leave:
+        raise HTTPException(status_code=400, detail="You cannot apply for leave until your current leave is resolved or ends")
 
     # Save leave to the database
     leave_instance = Leave(**leave_dict)
     result = await leaves_collection.insert_one(leave_instance.model_dump())
 
-    return {"message": "Leave request created successfully", "leave_id": str(result.inserted_id)}
+    return {"message": "Leave request created successfully", "leave_id": str(result.inserted_id), "leave_days": leave_days}

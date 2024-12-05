@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -6,6 +7,7 @@ from db import leaves_collection, employees_collection
 from utils import get_current_user
 from exceptions import get_user_exception
 
+UTC = timezone.utc
 
 router = APIRouter(prefix="/leaves", tags=["leaves"])
 
@@ -92,9 +94,41 @@ async def list_leaves(
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"An error occurred - {e}")
+    
+
+@router.post("/{leave_id}/approve")
+async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_current_user)):
+    user, user_type = user_and_type
+
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this function")
+
+    leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave not found")
+
+    user = await employees_collection.find_one({"employee_id": leave["employee_id"]})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    leave_duration = leave["duration"]
+
+    # Deduct leave days
+    await employees_collection.update_one(
+        {"employee_id": leave["employee_id"]},
+        {"$inc": {"used_leave_days": leave_duration, "annual_leave_days": -leave_duration}}
+    )
+
+    # Update leave status
+    await leaves_collection.update_one(
+        {"_id": ObjectId(leave_id)},
+        {"$set": {"status": "approved"}}
+    )
+
+    return {"message": "Leave approved and leave days deducted"}
 
 
-router.post("/{leave_id}/reject", status_code=status.HTTP_200_OK)
+@router.post("/{leave_id}/reject", status_code=status.HTTP_200_OK)
 async def reject_leave(leave_id: str, user_and_type: tuple = Depends(get_current_user)):
     user, user_type = user_and_type
 
@@ -120,16 +154,16 @@ async def reject_leave(leave_id: str, user_and_type: tuple = Depends(get_current
         # Update the leave status to "approved"
         updated_leave = await leaves_collection.update_one(
             {"_id": ObjectId(leave_id), "company_id": company_id},
-            {"$set": {"status": "rejected"}}
+            {"$set": {"status": "rejected", "edited_at": datetime.now(UTC)}}
         )
 
         if updated_leave.modified_count == 0:
             raise HTTPException(
                 status_code=400,
-                detail="Unable to approve the leave; it may have already been approved"
+                detail="Unable to approve the leave; it may have already been rejected"
             )
 
-        return {"message": "Leave was successfully approved"}
+        return {"message": "Leave was successfully rejected"}
     
     except Exception as e:
         raise HTTPException(

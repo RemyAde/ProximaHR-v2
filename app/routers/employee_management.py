@@ -85,7 +85,7 @@ async def list_employees(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An exception has occurred - {e}")
 
 
-@router.get("/employee/{employee_id}")
+@router.get("/{employee_id}/employee")
 async def get_employee_details(
     employee_id: str, 
     company_id: str,
@@ -193,7 +193,7 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
     return {"message": "Employee account created successfully", "data": data}
 
 
-@router.put("/edit-employee/{employee_id}")
+@router.put("/{employee_id}/edit-employee")
 async def edit_employee_profile(
     employee_id: str,
     employee_updates: EditEmployee,
@@ -238,7 +238,7 @@ async def edit_employee_profile(
     return {"message": "Employee profile updated successfully", "updated_fields": update_data}
 
 
-@router.post("/suspend-employee/{employee_id}")
+@router.post("/{employee_id}/suspend-employee")
 async def suspend_employee(
     company_id: str,
     employee_id: str,
@@ -278,7 +278,7 @@ async def suspend_employee(
     return {"message": "Employee successfully suspended"}
 
 
-@router.post("/deactivate-employee/{employee_id}")
+@router.post("/{employee_id}/deactivate-employee")
 async def deactivate_employee(
     company_id: str,
     employee_id: str,
