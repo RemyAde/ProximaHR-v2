@@ -7,7 +7,7 @@ from utils import get_current_user
 from exceptions import get_user_exception
 
 
-router = APIRouter(prefix="leaves", tags=["leaves"])
+router = APIRouter(prefix="/leaves", tags=["leaves"])
 
 
 class LeaveList(BaseModel):
@@ -99,7 +99,7 @@ async def list_leaves(
         raise HTTPException(status_code=400, detail=f"An error occurred - {e}")
     
 
-@router.post("/{leave_id}/approve_leave", status_code=status.HTTP_200_OK)
+@router.post("/{leave_id}/approve", status_code=status.HTTP_200_OK)
 async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_current_user)):
     user, user_type = user_and_type
 
@@ -112,7 +112,7 @@ async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_curren
 
     try:
         # Retrieve the company ID
-        company_id = str(user.get("company_id"))  # Ensure this is the correct field
+        company_id = str(user.get("company_id"))
 
         # Fetch the leave document
         leave_obj = await leaves_collection.find_one({"_id": ObjectId(leave_id), "company_id": company_id})
@@ -145,7 +145,7 @@ async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_curren
         )
 
 
-router.post("/{leave_id}/reject_leave", status_code=status.HTTP_200_OK)
+router.post("/{leave_id}/reject", status_code=status.HTTP_200_OK)
 async def reject_leave(leave_id: str, user_and_type: tuple = Depends(get_current_user)):
     user, user_type = user_and_type
 

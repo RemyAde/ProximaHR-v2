@@ -8,7 +8,7 @@ import uvicorn
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from routers import auth
-from routers import admin, employee, dashboard, employee_management, department
+from routers import admin, employee, dashboard, employee_management, department, leave_management
 from config import settings
 
 PROD_MODE = settings.PRODUCTION_MODE
@@ -21,6 +21,7 @@ app.include_router(employee.router, prefix="/employee", tags=["employee"])
 app.include_router(department.router, prefix="/departments", tags=["department"])
 app.include_router(employee_management.router, prefix="/employee-management", tags=["employee_management"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+app.include_router(leave_management.router)
 
 # Middleware
 app.add_middleware(
