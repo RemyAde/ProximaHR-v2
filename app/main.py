@@ -6,14 +6,22 @@ import logging
 import uvicorn
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 from routers import auth
 from routers import admin, employee, dashboard, employee_management, department, leave_management
 from config import settings
 
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+directory = os.path.join(BASE_DIR, "static")
+
 PROD_MODE = settings.PRODUCTION_MODE
 
 app = FastAPI(title=settings.PROJECT_TITLE)
+
+app.mount("/static", StaticFiles(directory=directory), name="static")
 
 app.include_router(auth.router, prefix="/company", tags=["company"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])

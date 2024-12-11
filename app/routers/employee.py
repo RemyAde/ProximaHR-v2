@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, File, HTTPException, Depends, Request, UploadFile
 from db import companies_collection, employees_collection, leaves_collection
 from models.employees import Employee
 from models.leaves import Leave
 from schemas.leave import CreateLeave
+from schemas.employee import ImageUpload
 from utils import get_current_user
+from image_utils import create_media_file
 from exceptions import get_unknown_entity_exception
 
 UTC = timezone.utc
@@ -50,19 +52,6 @@ async def create_leave(
 
     leave_dict["duration"] = leave_duration
 
-    # Check for overlapping leaves
-    # overlapping_leaves = await leaves_collection.find_one({
-    #     "employee_id": user["employee_id"],
-    #     "status": {"$in": ["pending", "approved"]},
-    #     "$or": [
-    #         {"start_date": {"$lte": leave_dict["end_date"]}, "end_date": {"$gte": leave_dict["start_date"]}},
-    #         {"start_date": {"$gte": leave_dict["start_date"]}, "end_date": {"$lte": leave_dict["end_date"]}},
-    #     ]
-    # })
-
-    # if overlapping_leaves:
-    #     raise HTTPException(status_code=400, detail="You already have a pending or approved leave within this date range")
-    
     existing_leave = await leaves_collection.find_one({
         "employee_id": user["employee_id"],
         "status": {"$in": ["pending", "approved"]},
@@ -76,3 +65,44 @@ async def create_leave(
     result = await leaves_collection.insert_one(leave_instance.model_dump())
 
     return {"message": "Leave request created successfully", "leave_id": str(result.inserted_id), "leave_days": leave_days}
+
+
+@router.post("/profile-image-upload")
+async def upload_profile_image(request: Request, company_id: str, image_file: UploadFile = File(...), user_and_type: tuple = Depends(get_current_user)):
+    user, user_type = user_and_type
+
+    if company_id != user.get("company_id"):
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this function")
+
+    if not image_file:
+        raise HTTPException(status_code=400, detail="You must upload an image file")
+    
+    media_token_name = await create_media_file(type=user_type, file=image_file)
+
+    result = await employees_collection.update_one(
+        {"employee_id": user["employee_id"]}, 
+        {"$set": 
+         {"profile_image": f"{request.base_url}static/uploads/employee/{media_token_name}"}}
+        )
+
+    if result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Profile image not uploaded")
+
+    return {"message": "Profile image uploaded successfully"}
+
+
+@router.delete("/delete-profile-image")
+async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    user, user_type = user_and_type
+
+    if company_id != user["company_id"]:
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    
+    result = await employees_collection.update_one(
+        {"employee_id": user["employee_id"]},
+        {"$set":
+         {"profile_image": ""}}
+         )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Image file not deleted.")

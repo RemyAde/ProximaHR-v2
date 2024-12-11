@@ -10,6 +10,7 @@ class Admin(BaseModel):
     last_name: str
     email: str
     password: str
+    profile_image: Optional[str] = None
     company_id: str
     role: str = "admin"
     date_created: datetime = datetime.now(UTC)
