@@ -4,7 +4,6 @@ from db import companies_collection, employees_collection, leaves_collection
 from models.employees import Employee
 from models.leaves import Leave
 from schemas.leave import CreateLeave
-from schemas.employee import ImageUpload
 from utils import get_current_user
 from image_utils import create_media_file
 from exceptions import get_unknown_entity_exception
@@ -103,6 +102,8 @@ async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(g
         {"$set":
          {"profile_image": ""}}
          )
+
+        #  implement logic to remove pix from server
     
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Image file not deleted.")

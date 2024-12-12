@@ -149,6 +149,18 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
     employee_request_dict = employee_request.model_dump(exclude_unset=True)
     employee_request_dict["company_id"] = user["company_id"]
     employee_request_dict["password"] = hash_password(employee_pwd)
+
+    base_salary = employee_request.base_salary or 0
+    paye_deduction_value = (employee_request.paye_deduction / 100) * base_salary
+    employee_contribution_value = (employee_request.employee_contribution / 100) * base_salary
+    company_match_value = (employee_request.company_match / 100) * base_salary
+
+    employee_request_dict["paye_deduction"] = paye_deduction_value
+    employee_request_dict["employee_contribution"] = employee_contribution_value
+    employee_request_dict["company_match"] = company_match_value
+    
+    employee_request_dict["net_pay"] = base_salary - (paye_deduction_value + employee_contribution_value)
+
     employee_request_dict["date_of_birth"] = datetime.combine(employee_request.date_of_birth, datetime.min.time())
 
     # Start a session and transaction
