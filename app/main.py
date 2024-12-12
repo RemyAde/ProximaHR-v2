@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 from routers import auth
-from routers import admin, employee, dashboard, employee_management, department, leave_management
+from routers import admin, employee, dashboard, employee_management, department, leave_management, payroll_management
 from config import settings
 
 import os
@@ -29,7 +29,8 @@ app.include_router(employee.router, prefix="/employee", tags=["employee"])
 app.include_router(department.router, prefix="/departments", tags=["department"])
 app.include_router(employee_management.router, prefix="/employee-management", tags=["employee_management"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
-app.include_router(leave_management.router)
+app.include_router(leave_management.router, prefix="/leave-management", tags=["leave_management"])
+app.include_router(payroll_management.router, prefix="/payroll-management", tags=["payroll_management"])
 
 # Middleware
 app.add_middleware(

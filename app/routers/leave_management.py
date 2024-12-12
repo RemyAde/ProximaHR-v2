@@ -9,7 +9,7 @@ from exceptions import get_user_exception
 
 UTC = timezone.utc
 
-router = APIRouter(prefix="/leaves", tags=["leaves"])
+router = APIRouter()
 
 
 class LeaveList(BaseModel):

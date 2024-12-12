@@ -61,5 +61,14 @@ cython_debug
 *.db
 migrations/
 
-# other helper files
+# Local files
 test.js
+
+app/static/uploads/admin/*
+app/static/uploads/employee/*
+
+!app/static/uploads/admin/
+!app/static/uploads/employee/
+
+!app/static/uploads/admin/*.gitkeep
+!app/static/uploads/employee/*.gitkeep
