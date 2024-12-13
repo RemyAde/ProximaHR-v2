@@ -1,6 +1,7 @@
 from pydantic import BaseModel
+from attendance import Attendance
 from datetime import datetime, timezone
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import date
 
 UTC = timezone.utc
@@ -50,5 +51,10 @@ class Employee(BaseModel):
     current_year: str = current_year
     position: str = "member"
     employment_status: str = "active" # or inactive or suspended
+    week_days: int  # Number of working days in a week
+    monthly_overtime_hours: float = 0.0
+    monthly_working_hours: float = 0.0
+    attendance: List[Attendance] = []
+    leaves: List[datetime] = []
     # suspension: Optional[Dict] = {}
     date_created: datetime = current_datetime
