@@ -12,4 +12,4 @@ employees_collection = db.employees
 random_codes_collection = db.random_codes
 departments_collection = db.departments
 leaves_collection = db.leaves
-attendance_collection = db.attendance
+timer_logs_collection = db.timer_logs

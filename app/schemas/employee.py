@@ -22,6 +22,8 @@ class CreateEmployee(BaseModel):
     employment_date: Optional[date] = None
     work_mode: Optional[str] = None
     work_location: Optional[str] = None
+    working_hours: Optional[int] = 0
+    weekly_workdays: Optional[int] = 0
     base_salary: Optional[int] = None
     payment_frequency: Optional[str] = None
     account_name: Optional[str] = None
@@ -56,6 +58,7 @@ class EditEmployee(BaseModel):
    work_mode: Optional[str] = None
    work_location: Optional[str] = None
    working_hours: Optional[int] = 0
+   weekly_workdays: Optional[int] = 0
    base_salary: Optional[int] = None
    payment_frequency: Optional[str] = None
    account_name: Optional[str] = None

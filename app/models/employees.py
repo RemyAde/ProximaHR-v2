@@ -1,5 +1,4 @@
-from pydantic import BaseModel
-from attendance import Attendance
+from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 from typing import Optional, Dict, List
 from datetime import date
@@ -27,7 +26,11 @@ class Employee(BaseModel):
     role: Optional[str] = None
     work_mode: Optional[str] = None
     work_location: Optional[str] = None
-    working_hours: Optional[int] = 0
+    working_hours: int
+    weekly_workdays: Optional[int] = 0 # number of working days per week
+    monthly_overtime_hours: float = 0
+    monthly_working_hours: float = 0
+    attendance: List[dict] = Field(default_factory=list)  # [{"date": datetime, "hours_worked": float, "attendance_status": str}]
     employment_date: Optional[datetime] = None
     base_salary: Optional[int] = None
     payment_frequency: Optional[str] = None
@@ -51,10 +54,4 @@ class Employee(BaseModel):
     current_year: str = current_year
     position: str = "member"
     employment_status: str = "active" # or inactive or suspended
-    week_days: int  # Number of working days in a week
-    monthly_overtime_hours: float = 0.0
-    monthly_working_hours: float = 0.0
-    attendance: List[Attendance] = []
-    leaves: List[datetime] = []
-    # suspension: Optional[Dict] = {}
     date_created: datetime = current_datetime
