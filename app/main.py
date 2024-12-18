@@ -11,7 +11,7 @@ from starlette.middleware.cors import CORSMiddleware
 from routers import auth
 from routers import (admin, employee, dashboard, employee_management, 
                      department, leave_management, payroll_management, 
-                     attendance)
+                     attendance_management, attendance)
 from config import settings
 
 import os
@@ -33,6 +33,7 @@ app.include_router(employee_management.router, prefix="/employee-management", ta
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(leave_management.router, prefix="/leave-management", tags=["leave_management"])
 app.include_router(payroll_management.router, prefix="/payroll-management", tags=["payroll_management"])
+app.include_router(attendance_management.router, prefix="/attendance-management", tags=["attendance_management"])
 app.include_router(attendance.router, prefix="/attendance", tags=["attendance"])
 
 # Middleware

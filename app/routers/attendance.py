@@ -156,8 +156,8 @@ async def calculate_daily_attendance(
         raise HTTPException(status_code=400, detail=f"An exception occured - {e}")
 
 
-@router.get("/employee/monthly-attendance")
-async def calculate_monthly_attendance(month: int, year: int, user_and_type: tuple = Depends(get_current_user)):
+@router.get("/employee/monthly-attendance-percentage")
+async def calculate_monthly_attendance_percentage(month: int, year: int, user_and_type: tuple = Depends(get_current_user)):
     user, user_type = user_and_type
 
     try:
@@ -168,7 +168,7 @@ async def calculate_monthly_attendance(month: int, year: int, user_and_type: tup
         weekly_workdays = employee.get("weekly_workdays", 0)
         working_hours = employee.get("working_hours", 0)
         ideal_hours = await get_ideal_monthly_hours(weekly_workdays=int(weekly_workdays), working_hours=int(working_hours), month=month, year=year)
-        actual_hours = employee.get("monthly_working_hours", 0)
+        actual_hours = employee.get("monthly_working_hours", 0) # fix bug - this isn't month sensitive
         attendance_percentage = (actual_hours / ideal_hours) * 100
 
         return {
@@ -183,88 +183,8 @@ async def calculate_monthly_attendance(month: int, year: int, user_and_type: tup
         raise HTTPException(status_code=400, detail=f"An exception occured - {e}")
 
 
-# @router.get("/employee/weekly-attendance")
-# async def get_weekly_attendance(
-#     year: int = Query(..., description="Year for the attendance report"),
-#     month: int = Query(..., description="Month for the attendance report"),
-#     user_and_type: tuple = Depends(get_current_user)
-# ) -> List[Dict]:
-#     """
-#     Generate weekly attendance report for an employee for a chosen month and year.
-#     """
-#     user, user_type = user_and_type
-#     try:
-#         # Verify employee existence
-#         employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id"))})
-#         if not employee:
-#             raise HTTPException(status_code=404, detail="Employee not found")
-
-#         # Fetch working hours
-#         working_hours = int(employee.get("working_hours"))
-#         weekly_workdays = int(employee.get("weekly_workdays"))
-#         workdays = list(range(weekly_workdays))
-
-#         # Initialize start and end dates for the month
-#         start_date = datetime(year, month, 1, tzinfo=UTC)
-#         end_date = (start_date + timedelta(days=31)).replace(day=1) - timedelta(days=1)
-
-#         today = datetime.now(UTC)
-#         today_date = today.date()  # Convert to a date object
-
-#         # Adjust end_date for the current month
-#         if year == today_date.year and month == today_date.month:
-#             end_date = today
-
-#         # Fetch attendance logs for the month
-#         timer_logs = await timer_logs_collection.find({
-#             "company_id": user.get("company_id"),
-#             "employee_id": user.get("employee_id"),
-#             "date": {"$gte": start_date, "$lte": end_date}
-#         }).to_list(length=None)
-
-#         # Organize logs by date for quick lookup
-#         logs_by_date = {log["date"].date(): log for log in timer_logs}
-
-#         # Generate weekly attendance summary
-#         attendance_summary = []
-#         current_date = start_date
-#         while current_date <= end_date:
-#             log = logs_by_date.get(current_date.date())
-
-#             # Calculate attendance details
-#             start_time = log["start_time"] if log else None
-#             end_time = log["end_time"] if log else None
-#             hours_worked = log.get("total_hours", 0) if log else 0
-
-#             # Debugging output
-#             print(f"Date: {current_date.date()}, Hours Worked: {hours_worked}, Working Hours: {working_hours}")
-
-#             # Determine overtime, undertime, and absence
-#             overtime = 1 if hours_worked > working_hours else 0
-#             undertime = 1 if hours_worked < working_hours and hours_worked >= 0.4 * working_hours else 0
-#             absent = 1 if hours_worked < 0.4 * working_hours else 0
-
-#             # Append the daily attendance record
-#             attendance_summary.append({
-#                 "date": current_date.date(),
-#                 "start_time": start_time,
-#                 "end_time": end_time,
-#                 "hours_worked": round(hours_worked, 2),
-#                 "overtime": overtime,
-#                 "undertime": undertime,
-#                 "absent": absent
-#             })
-
-#             current_date += timedelta(days=1)
-
-#         return attendance_summary
-
-#     except Exception as e:
-#         raise HTTPException(status_code=400, detail=f"An exception occurred - {e}")
-
-
-@router.get("/employee/weekly-attendance")
-async def get_weekly_attendance(
+@router.get("/employee/attendance-summary")
+async def get_attendance_summary(
     year: int = Query(..., description="Year for the attendance report"),
     month: int = Query(..., description="Month for the attendance report"),
     user_and_type: tuple = Depends(get_current_user)
@@ -343,6 +263,7 @@ async def get_weekly_attendance(
                         "undertime": undertime,
                         "absent": absent
                     })
+                    # save attendance summary to a model and store in db
 
             # Move to the next day
             current_date += timedelta(days=1)

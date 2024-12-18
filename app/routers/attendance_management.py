@@ -1,2 +1,131 @@
+from datetime import datetime, timedelta
+from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Depends
+from pytz import UTC
+from db import leaves_collection, timer_logs_collection, employees_collection
 from utils import get_current_user
+
+router = APIRouter()
+
+
+@router.get("/{_id}/attendance")
+async def get_monthly_attendance_record(
+    _id: str, 
+    user_and_type: tuple = Depends(get_current_user)
+):
+    user, user_type = user_and_type
+
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    
+    employee = await employees_collection.find_one({
+        "_id": ObjectId(_id),
+        "company_id": user.get("company_id")
+    })
+    if not employee:
+        raise HTTPException(
+            status_code=400,
+            detail="Employee is not a member of your company"
+        )
+    
+    today = datetime.now(UTC)
+    start_date = datetime(today.year, today.month, 1, tzinfo=UTC)
+    end_date = today
+
+    # Fetch approved leaves for the employee
+    leaves = await leaves_collection.find({
+        "company_id": employee["company_id"], 
+        "employee_id": employee["employee_id"],
+        "status": "approved",
+        "start_date": {"$lte": end_date},
+        "end_date": {"$gte": start_date}
+    }).to_list(length=None)
+
+    leave_dates = set()
+    for leave in leaves:
+        leave_start = leave["start_date"].date()
+        leave_end = leave["end_date"].date()
+        leave_dates.update((leave_start + timedelta(days=i)) for i in range((leave_end - leave_start).days + 1))
+
+    # Fetch attendance logs for the month
+    attendance_logs = await timer_logs_collection.find({
+        "company_id": employee.get("company_id", ""),
+        "employee_id": employee.get("employee_id", ""),
+        "date": {"$gte": start_date, "$lte": end_date}
+    }).to_list(length=None)
+
+    logs_by_date = {log["date"].date(): log for log in attendance_logs}
+
+    # Get working hours for the employee
+    working_hours = employee.get("working_hours", 8)
+
+    # Generate attendance records
+    summary = []
+    current_date = start_date
+    total_leave_days = 0
+    total_absences = 0
+    total_undertimes = 0
+    total_presents = 0
+
+    while current_date <= end_date:
+        current_day = current_date.date()
+        is_leave_day = current_day in leave_dates
+
+        # Determine attendance status
+        if is_leave_day:
+            attendance_status = "on_leave"
+            total_leave_days += 1
+            hours_worked = 0
+            overtime = 0
+            undertime = 0
+            absent = 0
+        else:
+            log = logs_by_date.get(current_day)
+            if log:
+                start_time = log.get("start_time")
+                end_time = log.get("end_time")
+                hours_worked = (end_time - start_time).total_seconds() / 3600 if start_time and end_time else 0
+                overtime = 1 if hours_worked > working_hours else 0
+                undertime = 1 if working_hours > hours_worked >= 0.4 * working_hours else 0
+                absent = 1 if hours_worked < 0.4 * working_hours else 0
+
+                if hours_worked >= 0.9 * working_hours:
+                    attendance_status = "present"
+                    total_presents += 1
+                elif undertime:
+                    attendance_status = "undertime"
+                    total_undertimes += 1
+                elif absent:
+                    attendance_status = "absent"
+                    total_absences += 1
+            else:
+                # No log means absent
+                hours_worked = 0
+                overtime = 0
+                undertime = 0
+                absent = 1
+                attendance_status = "absent"
+                total_absences += 1
+
+        # Add attendance record
+        summary.append({
+            "date": current_day,
+            "attendance_status": attendance_status,
+            "hours_worked": round(hours_worked, 2),
+            "overtime": overtime,
+            "undertime": undertime,
+            "absent": absent,
+        })
+
+        current_date += timedelta(days=1)
+
+    # Return detailed attendance and summary counts
+    return {
+        "attendance_summary": summary,
+        "totals": {
+            "leave_days": total_leave_days,
+            "absences": total_absences,
+            "undertimes": total_undertimes,
+            "presents": total_presents,
+        }
+    }
