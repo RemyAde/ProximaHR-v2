@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from db import employees_collection, timer_logs_collection, leaves_collection, payroll_collection
 from utils import get_current_user
 from report_analytics_utils import calculate_attendance_trend, calculate_leave_utilization_trend, calculate_payroll_trend
@@ -156,3 +156,65 @@ async def get_workforce_growth_and_trend(user_and_type: tuple = Depends(get_curr
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving workforce data: {e}")
+    
+
+@router.get("/overtime-by-department", response_model=dict)
+async def get_overtime_by_department(
+    year: int = Query(None, description="Filter overtime hours for a specific year (e.g., 2024)"),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Calculate total overtime hours by department with an optional yearly filter.
+    """
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can access this data.")
+    
+    company_id = user.get("company_id")
+
+    try:
+        # Build the match filter
+        match_filter = {
+            "company_id": company_id,  # Filter by company
+            "attendance": {"$exists": True, "$ne": []},  # Ensure attendance exists and is not empty
+        }
+
+        # Add a year filter if provided
+        if year:
+            start_of_year = datetime(year, 1, 1)
+            end_of_year = datetime(year, 12, 31, 23, 59, 59)
+            match_filter["attendance.date"] = {"$gte": start_of_year, "$lte": end_of_year}
+
+        # MongoDB aggregation pipeline
+        overtime_by_department = await employees_collection.aggregate([
+            {"$match": match_filter},
+            {"$unwind": "$attendance"},  # Flatten attendance array
+            {
+                "$match": {  # Ensure filtering within the specified year after unwinding
+                    "attendance.date": {"$gte": start_of_year, "$lte": end_of_year}
+                } if year else {}
+            },
+            {
+                "$group": {
+                    "_id": "$department",  # Group by department
+                    "total_overtime_hours": {
+                        "$sum": {
+                            "$ifNull": ["$attendance.overtime_hours", 0]  # Sum overtime_hours, default to 0
+                        }
+                    }
+                }
+            },
+            {"$sort": {"total_overtime_hours": -1}}  # Sort by overtime in descending order (optional)
+        ]).to_list(length=None)
+
+        # Format response
+        result = {entry["_id"]: entry["total_overtime_hours"] for entry in overtime_by_department}
+
+        return {
+            "company_id": company_id,
+            "overtime_by_department": result,
+            "year": year
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating overtime by department: {e}")
