@@ -205,24 +205,3 @@ async def verify_verification_code(email: str, verification_code: int):
             print("user_code", verification_code)
             print("retrieved-code", code_to_verify.get("code"))
         raise HTTPException(status_code=400, detail=f"An error occurred - {e}")
-    
-
-async def revert_suspensions():
-    now = datetime.now(UTC)
-    try:
-        # Find employees with "suspended" employment status
-        async for employee in employees_collection.find({"employment_status": "suspended"}):
-            if "suspension" in employee:
-                end_date = employee["suspension"].get("end_date")
-                if end_date and datetime.strptime(end_date, "%Y-%m-%dT%H:%M:%SZ") <= now:
-                    # Update employee status to active and remove suspension
-                    await employees_collection.update_one(
-                        {"employee_id": employee["employee_id"]},
-                        {"$set": {"employment_status": "active"}, "$unset": {"suspension": ""}}
-                    )
-        print("Suspensions reverted successfully")
-    except Exception as e:
-        print(f"Error during suspension reversion: {e}")
-
-scheduler.add_job(revert_suspensions, "interval", hours=1)  # Run every hour
-scheduler.start()

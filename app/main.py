@@ -2,6 +2,7 @@ import requests
 import time 
 import threading
 import logging 
+from cron_jobs import scheduler
 
 import uvicorn
 
@@ -11,7 +12,7 @@ from starlette.middleware.cors import CORSMiddleware
 from routers import auth
 from routers import (admin, employee, dashboard, employee_management, 
                      department, leave_management, payroll_management, 
-                     attendance_management, attendance)
+                     attendance_management, attendance, report_analytics)
 from config import settings
 
 import os
@@ -35,6 +36,7 @@ app.include_router(leave_management.router, prefix="/leave-management", tags=["l
 app.include_router(payroll_management.router, prefix="/payroll-management", tags=["payroll_management"])
 app.include_router(attendance_management.router, prefix="/attendance-management", tags=["attendance_management"])
 app.include_router(attendance.router, prefix="/attendance", tags=["attendance"])
+app.include_router(report_analytics.router, prefix="/analytics", tags=["analytics"])
 
 # Middleware
 app.add_middleware(
@@ -82,6 +84,8 @@ def main_ping():
 
 
 if __name__ == "__main__":
+    # Start cron job scheduler
+    scheduler.start()
 
     # Start the pinging function in a separate thread
     if PROD_MODE == True:
