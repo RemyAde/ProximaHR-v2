@@ -140,7 +140,7 @@ async def calculate_daily_attendance(
         attendance_status = calculate_attendance_status(total_hours_worked, working_hours, is_leave_day)
 
         await employees_collection.update_one(
-            {"employee_id": employee["_id"]},
+            {"employee_id": employee["employee_id"]},
             {"$push": {"attendance": {
                 "date": today_start,
                 "hours_worked": total_hours_worked,

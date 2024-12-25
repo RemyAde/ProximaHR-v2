@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Path
 from pytz import UTC
 from db import leaves_collection, timer_logs_collection, employees_collection
 from utils import get_current_user
@@ -10,7 +10,7 @@ router = APIRouter()
 
 @router.get("/{_id}/attendance")
 async def get_monthly_attendance_record(
-    _id: str, 
+    _id :str = Path(..., description="Employee ID"),
     user_and_type: tuple = Depends(get_current_user)
 ):
     user, user_type = user_and_type
