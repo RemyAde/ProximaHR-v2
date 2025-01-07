@@ -26,7 +26,7 @@ async def revert_suspensions():
 scheduler.add_job(
     revert_suspensions,
     "interval",
-    hours=1,  # Run every hour
+    hours=72,  # Run every hour
 )
 
 async def calculate_yearly_payroll():
