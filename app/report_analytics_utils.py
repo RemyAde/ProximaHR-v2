@@ -208,22 +208,27 @@ async def calculate_department_attendance_percentage():
             },
             {
                 "$project": {
-                    "department": "$_id",
+                    "department": "$_id.department",
                     "attendance_percentage": {
-                        "$multiply": [
+                        "$round": [
                             {
-                                "$cond": {
-                                    "if": {"$eq": ["$total_ideal_hours", 0]},
-                                    "then": 0,
-                                    "else": {
-                                        "$divide": ["$total_hours_worked", "$total_ideal_hours"]
-                                    }
-                                }
+                                "$multiply": [
+                                    {
+                                        "$cond": {
+                                            "if": {"$eq": ["$total_ideal_hours", 0]},
+                                            "then": 0,
+                                            "else": {
+                                                "$divide": ["$total_hours_worked", "$total_ideal_hours"]
+                                            }
+                                        }
+                                    },
+                                    100
+                                ]
                             },
-                            100
+                            2  # Round to 2 decimal places
                         ]
                     },
-                    "_id": 0  # Exclude _id field from result
+                    "_id": 0
                 }
             }
         ]
@@ -290,20 +295,25 @@ async def calculate_company_monthly_attendance():
                 "$project": {
                     "month": "$_id.month",
                     "attendance_percentage": {
-                        "$multiply": [
+                        "$round": [
                             {
-                                "$cond": {
-                                    "if": {"$eq": ["$total_ideal_hours", 0]},
-                                    "then": 0,
-                                    "else": {
-                                        "$divide": ["$total_hours_worked", "$total_ideal_hours"]
-                                    }
-                                }
+                                "$multiply": [
+                                    {
+                                        "$cond": {
+                                            "if": {"$eq": ["$total_ideal_hours", 0]},
+                                            "then": 0,
+                                            "else": {
+                                                "$divide": ["$total_hours_worked", "$total_ideal_hours"]
+                                            }
+                                        }
+                                    },
+                                    100
+                                ]
                             },
-                            100
+                            2  # Round to 2 decimal places
                         ]
                     },
-                    "_id": 0  # Exclude _id field
+                    "_id": 0
                 }
             },
             {
