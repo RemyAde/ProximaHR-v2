@@ -1,5 +1,23 @@
 from datetime import datetime, timezone
 from calendar import monthrange
+from bson import ObjectId
+from fastapi import HTTPException
+from pytz import UTC
+from db import timer_logs_collection
+from pymongo.errors import PyMongoError
+
+
+def serialize_objectid(data):
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                serialize_objectid(item)
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, ObjectId):
+                data[key] = str(value)
+            elif isinstance(value, (dict, list)):
+                serialize_objectid(value)
 
 async def calculate_attendance_trend(company_id, employees_collection, timer_logs_collection):
     today = datetime.now(timezone.utc)
@@ -139,3 +157,170 @@ async def calculate_payroll_trend(current_cost: float, previous_cost: float) -> 
         return 100
     trend = (current_cost / previous_cost) * 100
     return trend
+
+
+async def calculate_department_attendance_percentage():
+    try:
+        # Get the current month and year
+        current_date = datetime.now(UTC)  # Ensure UTC for consistency
+        year = current_date.year
+        month = current_date.month
+
+        # MongoDB aggregation pipeline
+        pipeline = [
+            {
+                "$addFields": {
+                    "year": {"$year": "$date"},
+                    "month": {"$month": "$date"}
+                }
+            },
+            {
+                "$match": {
+                    "year": year,
+                    "month": month
+                }
+            },
+            {
+                "$lookup": {
+                    "from": "employees",  # Employee collection
+                    "localField": "employee_id",  # Match employee_id in timer_logs
+                    "foreignField": "employee_id",  # Match employee_id in employees
+                    "as": "employee_info"
+                }
+            },
+            {
+                "$unwind": "$employee_info"  # Unwind joined employee_info array
+            },
+            {
+                "$group": {
+                    "_id": "$employee_info.department",  # Group by department
+                    "total_hours_worked": {"$sum": "$total_hours"},
+                    "total_ideal_hours": {
+                        "$sum": {
+                            "$multiply": [
+                                "$employee_info.weekly_workdays",  # Days per week
+                                "$employee_info.working_hours",   # Hours per day
+                                4.33  # Approximate weeks in a month
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "department": "$_id",
+                    "attendance_percentage": {
+                        "$multiply": [
+                            {
+                                "$cond": {
+                                    "if": {"$eq": ["$total_ideal_hours", 0]},
+                                    "then": 0,
+                                    "else": {
+                                        "$divide": ["$total_hours_worked", "$total_ideal_hours"]
+                                    }
+                                }
+                            },
+                            100
+                        ]
+                    },
+                    "_id": 0  # Exclude _id field from result
+                }
+            }
+        ]
+
+        # Run aggregation
+        cursor = timer_logs_collection.aggregate(pipeline)
+        results = await cursor.to_list(length=None)
+
+        # Handle empty results
+        if not results:
+            return {"message": "No attendance data found for the current month."}
+
+        return results
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+async def calculate_company_monthly_attendance():
+    try:
+        # Get the current year
+        current_year = datetime.now(UTC).year
+
+        # Aggregation pipeline
+        pipeline = [
+            {
+                "$addFields": {
+                    "year": {"$year": "$date"},
+                    "month": {"$month": "$date"}
+                }
+            },
+            {
+                "$match": {
+                    "year": current_year
+                }
+            },
+            {
+                "$lookup": {
+                    "from": "employees",  # Employee collection
+                    "localField": "employee_id",  # Match employee_id in timer_logs
+                    "foreignField": "employee_id",  # Match employee_id in employees
+                    "as": "employee_info"
+                }
+            },
+            {
+                "$unwind": "$employee_info"  # Unwind joined employee_info array
+            },
+            {
+                "$group": {
+                    "_id": {"month": "$month"},  # Group by month
+                    "total_hours_worked": {"$sum": "$total_hours"},
+                    "total_ideal_hours": {
+                        "$sum": {
+                            "$multiply": [
+                                "$employee_info.weekly_workdays",  # Weekly workdays
+                                "$employee_info.working_hours",   # Daily work hours
+                                4.33  # Approximate weeks in a month
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                "$project": {
+                    "month": "$_id.month",
+                    "attendance_percentage": {
+                        "$multiply": [
+                            {
+                                "$cond": {
+                                    "if": {"$eq": ["$total_ideal_hours", 0]},
+                                    "then": 0,
+                                    "else": {
+                                        "$divide": ["$total_hours_worked", "$total_ideal_hours"]
+                                    }
+                                }
+                            },
+                            100
+                        ]
+                    },
+                    "_id": 0  # Exclude _id field
+                }
+            },
+            {
+                "$sort": {"month": 1}  # Sort by month in ascending order
+            }
+        ]
+
+        # Run aggregation
+        cursor = timer_logs_collection.aggregate(pipeline)
+        results = await cursor.to_list(length=None)
+
+        # Handle empty results
+        if not results:
+            return {"message": "No attendance data found for the current year."}
+
+        return results
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

@@ -51,7 +51,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 logging.basicConfig(
     level=logging.INFO,  # Set the logging level to INFO
     format='%(asctime)s - %(levelname)s - %(message)s',  # Log format
@@ -60,7 +59,6 @@ logging.basicConfig(
 @app.get("/")
 def index():
     return {"message": "Hello Proxima"}
-
 
 def ping_server(url):
     try:
@@ -71,7 +69,6 @@ def ping_server(url):
     except requests.exceptions.RequestException as e:
         logging.error(f"Error pinging {url}: {e}")
 
-
 def main_ping():
     url = "https://proximahr.onrender.com"
     ping_interval = 600
@@ -79,8 +76,6 @@ def main_ping():
     while True:
         ping_server(url)
         time.sleep(ping_interval)
-
-
 
 
 if __name__ == "__main__":

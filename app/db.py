@@ -1,8 +1,12 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import settings
 
+if settings.PRODUCTION_MODE:
+    client = AsyncIOMotorClient(settings.MONGODB_URL)
 
-client = AsyncIOMotorClient(settings.MONGODB_URL)
+else:
+    client = AsyncIOMotorClient(settings.DEV_URL)
+    
 db = client.hr_system
 
 

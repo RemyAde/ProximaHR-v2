@@ -63,6 +63,7 @@ migrations/
 
 # Local files
 test.js
+app/test_db_connection.py
 
 app/static/uploads/admin/*
 app/static/uploads/employee/*

@@ -1,13 +1,32 @@
 from datetime import datetime, timezone
+from pytz import UTC
 from fastapi import APIRouter, Depends, HTTPException, Query
 from db import employees_collection, timer_logs_collection, leaves_collection, payroll_collection
 from utils import get_current_user
-from report_analytics_utils import calculate_attendance_trend, calculate_leave_utilization_trend, calculate_payroll_trend
+from report_analytics_utils import (calculate_attendance_trend, calculate_department_attendance_percentage, 
+                                    calculate_leave_utilization_trend, calculate_payroll_trend, 
+                                    serialize_objectid, calculate_company_monthly_attendance,)
 
 router = APIRouter()
 
 @router.get("/attendance-rate")
 async def get_attendance_rate(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieves attendance rate statistics for a company.
+    This asynchronous function calculates and returns attendance trends for a company based on employee timer logs.
+    Only users with admin privileges can access this data.
+    Args:
+        user_and_type (tuple): A tuple containing user information and user type, obtained from get_current_user dependency.
+            First element is the user dict containing company_id and other user details.
+            Second element is the user type string.
+    Returns:
+        dict: A dictionary containing attendance rate statistics and trends.
+    Raises:
+        HTTPException: 
+            - 403 error if the user is not an admin
+            - 400 error if there's an issue calculating the attendance trend
+    """
+
     user, user_type = user_and_type
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Only admins can access this data.")
@@ -21,6 +40,19 @@ async def get_attendance_rate(user_and_type: tuple = Depends(get_current_user)):
 
 @router.get("/leave-utilization")
 async def get_leave_utilization(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieve leave utilization trend for a company.
+    This endpoint is restricted to admin users. It calculates and returns the leave utilization trend
+    for the company associated with the current user.
+    Args:
+        user_and_type (tuple): A tuple containing the current user and their type, provided by the dependency injection.
+    Returns:
+        dict: A dictionary containing the leave utilization trend data.
+    Raises:
+        HTTPException: If the user is not an admin (status code 403).
+        HTTPException: If there is a ValueError during the calculation (status code 400).
+    """
+
     user, user_type = user_and_type
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Only admins can access this data.")
@@ -98,6 +130,22 @@ async def get_payroll_cost_and_trend(user_and_type: tuple = Depends(get_current_
 
 @router.get("/workforce", response_model=dict)
 async def get_workforce_growth_and_trend(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieve the workforce growth and trend for the current and previous year for a given company.
+    Args:
+        user_and_type (tuple): A tuple containing the current user and their type, 
+                               obtained from the dependency injection of `get_current_user`.
+    Returns:
+        dict: A dictionary containing the following keys:
+            - company_id (str): The ID of the company.
+            - current_workforce (int): The total number of active employees at the end of the current year.
+            - previous_workforce (int): The total number of active employees at the end of the previous year.
+            - trend (float): The percentage growth or decline in the workforce from the previous year to the current year.
+    Raises:
+        HTTPException: If the user is not an admin (status code 403).
+        HTTPException: If there is an error retrieving workforce data (status code 500).
+    """
+
     user, user_type = user_and_type
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Only admins can access this data.")
@@ -156,15 +204,26 @@ async def get_workforce_growth_and_trend(user_and_type: tuple = Depends(get_curr
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving workforce data: {e}")
-    
 
-@router.get("/overtime-by-department", response_model=dict)
+
+@router.get("/overtime-by-department-by-month", response_model=dict)
 async def get_overtime_by_department(
     year: int = Query(None, description="Filter overtime hours for a specific year (e.g., 2024)"),
     user_and_type: tuple = Depends(get_current_user)
 ):
     """
-    Calculate total overtime hours by department with an optional yearly filter.
+    This endpoint aggregates overtime hours across all employees within each department,
+    providing a monthly breakdown for the specified year. If no year is specified,
+    it returns data for all available years.
+    Args:
+        year (int, optional): The year to filter overtime data (e.g., 2024)
+        user_and_type (tuple): Tuple containing user information and user type from authentication
+    Returns:
+        dict: A dictionary containing:
+            - company_id: The ID of the company
+            - overtime_by_department: Dictionary with departments as keys and monthly overtime as values
+              where months are represented as integers (1-12)
+            - year: The year for which data was filtered (if specified)
     """
     user, user_type = user_and_type
     if user_type != "admin":
@@ -196,19 +255,31 @@ async def get_overtime_by_department(
             },
             {
                 "$group": {
-                    "_id": "$department",  # Group by department
+                    "_id": {
+                        "department": "$department",
+                        "month": {"$month": "$attendance.date"}
+                    },
                     "total_overtime_hours": {
                         "$sum": {
-                            "$ifNull": ["$attendance.overtime_hours", 0]  # Sum overtime_hours, default to 0
+                            "$ifNull": ["$attendance.overtime_hours", 0]
                         }
                     }
                 }
             },
-            {"$sort": {"total_overtime_hours": -1}}  # Sort by overtime in descending order (optional)
+            {"$sort": {"_id.month": 1, "total_overtime_hours": -1}}  # Sort by month and overtime
         ]).to_list(length=None)
 
-        # Format response
-        result = {entry["_id"]: entry["total_overtime_hours"] for entry in overtime_by_department}
+        # Format response with monthly breakdown
+        result = {}
+        for entry in overtime_by_department:
+            department = entry["_id"]["department"] or "Unassigned"  # Handle null department
+            month = entry["_id"]["month"]
+            overtime = entry["total_overtime_hours"]
+            
+            if department not in result:
+                result[department] = {i: 0 for i in range(1, 13)}  # Initialize all months with 0
+            
+            result[department][month] = overtime
 
         return {
             "company_id": company_id,
@@ -218,3 +289,77 @@ async def get_overtime_by_department(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error calculating overtime by department: {e}")
+
+
+@router.get("/top-attendance", response_model=dict)
+async def get_best_attendance_records(
+    year: int = Query(None, description="Filter attendance records for a specific year (e.g., 2024)"),
+    top_n: int = Query(10, description="Number of top employees to retrieve"),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Retrieve the employees with the best attendance records based on total hours worked or attendance days.
+    """
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can access this data.")
+    
+    company_id = user.get("company_id")
+
+    try:
+        # Build the match filter
+        match_filter = {"company_id": company_id, "attendance": {"$exists": True, "$ne": []}}
+
+        # Add a year filter if provided
+        if year:
+            start_of_year = datetime(year, 1, 1)
+            end_of_year = datetime(year, 12, 31, 23, 59, 59)
+            match_filter["attendance.date"] = {"$gte": start_of_year, "$lte": end_of_year}
+
+        # MongoDB aggregation pipeline
+        best_attendance = await employees_collection.aggregate([
+        {"$match": match_filter},
+        {"$unwind": "$attendance"},  # Flatten attendance array
+        {
+            "$group": {
+                "_id": "$_id",  # Group by employee
+                "first_name": {"$first": "$first_name"},  # Retrieve employee's first name
+                "last_name": {"$first": "$last_name"},  # Retrieve employee's last name
+                "department": {"$first": "$department"},  # Retrieve employee's department
+                "total_hours_worked": {"$sum": "$attendance.hours_worked"},  # Total hours worked
+                "total_days_attended": {"$sum": 1}  # Count total days attended
+            }
+        },
+        {
+            "$addFields": {
+                "full_name": {"$concat": ["$first_name", " ", "$last_name"]}  # Combine first and last name
+            }
+        },
+        {"$sort": {"total_hours_worked": -1}},  # Sort by total hours worked in descending order
+        {"$limit": top_n}  # Limit to top N employees
+        ]).to_list(length=None)
+
+        serialize_objectid(best_attendance)
+
+        return {
+            "company_id": company_id,
+            "best_attendance_records": best_attendance,
+            "year": year if year else "all years",
+            "top_n": top_n
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving attendance records: {e}")
+    
+
+@router.get("/attendance/current-month")
+async def get_department_attendance_percentage():
+    return await calculate_department_attendance_percentage()
+
+    
+@router.get("/attendance/yearly-trend")
+async def get_yearly_attendance_trend():
+    """
+    Fetch the monthly attendance percentage trend for the current year.
+    """
+    return await calculate_company_monthly_attendance()
