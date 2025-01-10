@@ -208,7 +208,7 @@ async def calculate_department_attendance_percentage():
             },
             {
                 "$project": {
-                    "department": "$_id.department",
+                    "department": "$_id",  # Assign _id (department name) to department field
                     "attendance_percentage": {
                         "$round": [
                             {
@@ -228,7 +228,7 @@ async def calculate_department_attendance_percentage():
                             2  # Round to 2 decimal places
                         ]
                     },
-                    "_id": 0
+                    "_id": 0  # Exclude _id
                 }
             }
         ]

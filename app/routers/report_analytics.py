@@ -415,11 +415,26 @@ async def get_department_attendance_summary(
     Endpoint to get attendance summary for each department.
     """
     try:
+        # Get department summaries and attendance percentages
         result = await calculate_attendance_for_department(month, year)
-        if result:
+        attendance_percentage = await calculate_department_attendance_percentage()
+
+        # If both results are found, merge them
+        if result and attendance_percentage:
+            for department, summary in result.items():
+                # Find the matching department's attendance percentage
+                matching_percentage = next(
+                    (item["attendance_percentage"] for item in attendance_percentage if item["department"] == department),
+                    None
+                )
+                # Add the attendance percentage to the relevant department summary
+                summary["attendance_percentage"] = matching_percentage if matching_percentage is not None else 0.0
+
             return {"data": result}
+
         # Return 404 when no data is found
         return {"message": "No attendance data found for the given month and year", "data": []}
+
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="An error occurred while processing the request")
