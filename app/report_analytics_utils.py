@@ -159,7 +159,7 @@ async def calculate_payroll_trend(current_cost: float, previous_cost: float) -> 
     return trend
 
 
-async def calculate_department_attendance_percentage():
+async def calculate_department_attendance_percentage(company_id: str):
     try:
         # Get the current month and year
         current_date = datetime.now(UTC)  # Ensure UTC for consistency
@@ -177,7 +177,8 @@ async def calculate_department_attendance_percentage():
             {
                 "$match": {
                     "year": year,
-                    "month": month
+                    "month": month,
+                    "company_id": company_id  # Filter by company_id
                 }
             },
             {
@@ -247,7 +248,7 @@ async def calculate_department_attendance_percentage():
         raise HTTPException(status_code=500, detail=str(e))
     
 
-async def calculate_company_monthly_attendance():
+async def calculate_company_monthly_attendance(company_id: str):
     try:
         # Get the current year
         current_year = datetime.now(UTC).year
@@ -262,7 +263,8 @@ async def calculate_company_monthly_attendance():
             },
             {
                 "$match": {
-                    "year": current_year
+                    "year": current_year,
+                    "company_id": company_id  # Filter by company_id
                 }
             },
             {
@@ -335,10 +337,11 @@ async def calculate_company_monthly_attendance():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def calculate_overtime_for_department(month: int, year: int) -> list:
+async def calculate_overtime_for_department(month: int, year: int, company_id: str) -> list:
     """
     Calculate total overtime hours, average overtime hours per employee,
-    and the employee with the highest overtime hours by department.
+    and the employee with the highest overtime hours by department,
+    scoped to a specific company.
     """
     pipeline = [
         {
@@ -348,7 +351,8 @@ async def calculate_overtime_for_department(month: int, year: int) -> list:
                         {"$eq": [{"$month": "$date"}, month]},
                         {"$eq": [{"$year": "$date"}, year]}
                     ]
-                }
+                },
+                "company_id": company_id  # Filter by company_id
             }
         },
         {
@@ -422,7 +426,7 @@ async def calculate_overtime_for_department(month: int, year: int) -> list:
     return await cursor.to_list(length=None)
 
 
-async def fetch_approved_leaves(month: int, year: int):
+async def fetch_approved_leaves(month: int, year: int, company_id: str):
     """Fetch approved leaves for the given month and year."""
     start_of_month = datetime(year, month, 1)
     next_month = month % 12 + 1
@@ -431,6 +435,7 @@ async def fetch_approved_leaves(month: int, year: int):
 
     # Query approved leaves within the range
     query = {
+        "company_id": company_id,
         "status": "approved",
         "$or": [
             {"start_date": {"$gte": start_of_month, "$lt": start_of_next_month}},
@@ -441,10 +446,10 @@ async def fetch_approved_leaves(month: int, year: int):
     leaves = await leaves_collection.find(query).to_list(length=None)
     return leaves
 
-async def calculate_attendance_for_department(month: int, year: int, work_threshold: float = 0.4) -> dict:
+async def calculate_attendance_for_department(month: int, year: int, company_id: str, work_threshold: float = 0.4) -> dict:
     """Calculate attendance metrics for each department with updated logic."""
     # Fetch all approved leaves for the month and year
-    leaves = await fetch_approved_leaves(month, year)
+    leaves = await fetch_approved_leaves(month, year, company_id)
 
     # Process leave dates into a set for quick lookup
     leave_dates = set()
@@ -453,8 +458,9 @@ async def calculate_attendance_for_department(month: int, year: int, work_thresh
         end_date = min(leave["end_date"], datetime(year, month + 1, 1) - timedelta(days=1))
         leave_dates.update([start_date.date() + timedelta(days=i) for i in range((end_date - start_date).days + 1)])
 
-    # Fetch attendance logs for the month
+    # Fetch attendance logs for the month and company
     logs_query = {
+        "company_id": company_id,
         "$expr": {
             "$and": [
                 {"$eq": [{"$month": "$date"}, month]},
@@ -469,12 +475,12 @@ async def calculate_attendance_for_department(month: int, year: int, work_thresh
     for log in logs:
         logs_by_date.setdefault(log["employee_id"], {})[log["date"].date()] = log
 
-    # Fetch all employees
-    employees = await employees_collection.find({}).to_list(length=None)
+    # Fetch all employees for the company
+    employees = await employees_collection.find({"company_id": company_id}).to_list(length=None)
 
     department_summary = {}
 
-    # Iterate through each department and calculate metrics
+    # Rest of the function remains the same...
     for employee in employees:
         department = employee["department"]
         weekly_workdays = employee.get("weekly_workdays", 5)
@@ -532,8 +538,6 @@ async def calculate_attendance_for_department(month: int, year: int, work_thresh
                     # No log means absent
                     attendance_status = "absent"
                     department_summary[department]["absent_days"] += 1
-
-                # get from the attendance endpoint of days absent to update here
 
             current_date += timedelta(days=1)
 

@@ -304,7 +304,6 @@ async def get_best_attendance_records(
     user, user_type = user_and_type
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Only admins can access this data.")
-    
     company_id = user.get("company_id")
 
     try:
@@ -354,7 +353,7 @@ async def get_best_attendance_records(
     
 
 @router.get("/attendance/current-month")
-async def get_department_attendance_percentage():
+async def get_department_attendance_percentage(user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieves the attendance percentage for all departments.
     This asynchronous function calculates and returns the attendance percentage
@@ -375,27 +374,44 @@ async def get_department_attendance_percentage():
     }
     """
 
-    return await calculate_department_attendance_percentage()
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can access this data.")
+    company_id = user["company_id"]
+
+    return await calculate_department_attendance_percentage(company_id=company_id)
 
     
 @router.get("/attendance/yearly-trend")
-async def get_yearly_attendance_trend():
+async def get_yearly_attendance_trend(user_and_type: tuple = Depends(get_current_user)):
     """
     Fetch the monthly attendance percentage trend for the current year.
     """
-    return await calculate_company_monthly_attendance()
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can access this data.")
+    company_id = user["company_id"]
+
+    return await calculate_company_monthly_attendance(company_id=company_id)
 
 
 @router.get("/overtime/by-department")
 async def get_overtime_statistics_by_department(
     month: int = Query(..., ge=1, le=12, description="Month value (1-12)"),
-    year: int = Query(datetime.now().year, description="Year value (default: current year)")
+    year: int = Query(datetime.now().year, description="Year value (default: current year)"),
+    user_and_type: tuple = Depends(get_current_user)
 ):
     """
     Endpoint to get overtime statistics by department for the given month and year.
     """
+
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can access this data.")
+    company_id = user["company_id"]
+
     try:
-        result = await calculate_overtime_for_department(month, year)
+        result = await calculate_overtime_for_department(month, year, company_id=company_id)
         if result:
             return {"data": result}
         # Return 404 when no overtime data is found
@@ -409,15 +425,22 @@ async def get_overtime_statistics_by_department(
 @router.get("/attendance/department-summary")
 async def get_department_attendance_summary(
     month: int = Query(..., ge=1, le=12, description="Month value (1-12)"),
-    year: int = Query(datetime.now().year, description="Year value (default: current year)")
+    year: int = Query(datetime.now().year, description="Year value (default: current year)"),
+    user_and_type: tuple = Depends(get_current_user)
 ):
     """
     Endpoint to get attendance summary for each department.
     """
+
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can access this data.")
+    company_id = user["company_id"]
+
     try:
         # Get department summaries and attendance percentages
-        result = await calculate_attendance_for_department(month, year)
-        attendance_percentage = await calculate_department_attendance_percentage()
+        result = await calculate_attendance_for_department(month=month, year=year, company_id=company_id)
+        attendance_percentage = await calculate_department_attendance_percentage(company_id=company_id)
 
         # If both results are found, merge them
         if result and attendance_percentage:
