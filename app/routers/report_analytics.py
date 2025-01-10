@@ -5,7 +5,8 @@ from db import employees_collection, timer_logs_collection, leaves_collection, p
 from utils import get_current_user
 from report_analytics_utils import (calculate_attendance_trend, calculate_department_attendance_percentage, 
                                     calculate_leave_utilization_trend, calculate_payroll_trend, 
-                                    serialize_objectid, calculate_company_monthly_attendance,)
+                                    serialize_objectid, calculate_company_monthly_attendance,
+                                    calculate_overtime_for_department, calculate_attendance_for_department)
 
 router = APIRouter()
 
@@ -354,6 +355,26 @@ async def get_best_attendance_records(
 
 @router.get("/attendance/current-month")
 async def get_department_attendance_percentage():
+    """
+    Retrieves the attendance percentage for all departments.
+    This asynchronous function calculates and returns the attendance percentage
+    for each department in the organization by delegating the computation to
+    the calculate_department_attendance_percentage function.
+    Returns
+    -------
+    dict
+        A dictionary containing department-wise attendance percentages where:
+        - keys: department names (str)
+        - values: attendance percentage (float)
+    Example
+    -------
+    {
+        'HR': 95.5,
+        'Engineering': 88.2,
+        'Sales': 92.0
+    }
+    """
+
     return await calculate_department_attendance_percentage()
 
     
@@ -363,3 +384,42 @@ async def get_yearly_attendance_trend():
     Fetch the monthly attendance percentage trend for the current year.
     """
     return await calculate_company_monthly_attendance()
+
+
+@router.get("/overtime/by-department")
+async def get_overtime_statistics_by_department(
+    month: int = Query(..., ge=1, le=12, description="Month value (1-12)"),
+    year: int = Query(datetime.now().year, description="Year value (default: current year)")
+):
+    """
+    Endpoint to get overtime statistics by department for the given month and year.
+    """
+    try:
+        result = await calculate_overtime_for_department(month, year)
+        if result:
+            return {"data": result}
+        # Return 404 when no overtime data is found
+        return {"message": "No overtime data found for the given month and year", "data": []}
+    except Exception as e:
+        # Log the error for debugging (optional)
+        print(f"Error occurred: {e}")
+        raise HTTPException(status_code=500, detail="An error occurred while processing the request")
+    
+
+@router.get("/attendance/department-summary")
+async def get_department_attendance_summary(
+    month: int = Query(..., ge=1, le=12, description="Month value (1-12)"),
+    year: int = Query(datetime.now().year, description="Year value (default: current year)")
+):
+    """
+    Endpoint to get attendance summary for each department.
+    """
+    try:
+        result = await calculate_attendance_for_department(month, year)
+        if result:
+            return {"data": result}
+        # Return 404 when no data is found
+        return {"message": "No attendance data found for the given month and year", "data": []}
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail="An error occurred while processing the request")
