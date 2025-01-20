@@ -2,8 +2,8 @@ from datetime import datetime, timezone
 from pytz import UTC
 from fastapi import APIRouter, Depends, HTTPException, Query
 from db import employees_collection, timer_logs_collection, leaves_collection, payroll_collection
-from app.utils.app_utils import get_current_user
-from app.utils.report_analytics_utils import (calculate_attendance_trend, calculate_department_attendance_percentage, 
+from utils.app_utils import get_current_user
+from utils.report_analytics_utils import (calculate_attendance_trend, calculate_department_attendance_percentage, 
                                     calculate_leave_utilization_trend, calculate_payroll_trend, 
                                     serialize_objectid, calculate_company_monthly_attendance,
                                     calculate_overtime_for_department, calculate_attendance_for_department)

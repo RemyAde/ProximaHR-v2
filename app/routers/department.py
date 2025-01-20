@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from db import departments_collection, companies_collection, employees_collection
 from models.departments import Department
 from schemas.department import DepartmentCreate, DepartmentEdit
-from app.utils.app_utils import get_current_user
+from utils.app_utils import get_current_user
 from exceptions import get_user_exception, get_unknown_entity_exception
 
 

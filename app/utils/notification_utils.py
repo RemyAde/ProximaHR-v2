@@ -1,13 +1,13 @@
 from datetime import datetime
 from pytz import UTC
-from app.db import notifications_collection, employees_collection
+from db import notifications_collection, employees_collection
 from schemas.notification import NotificationCreate, NotificationType
 
 async def create_notification(notification: NotificationCreate):
     return await notifications_collection.insert_one(notification.model_dump())
 
 async def check_birthdays_and_anniversaries():
-    today = datetime.now()
+    today = datetime.now(UTC)
     
     # Find employees with birthdays today
     birthday_pipeline = [
@@ -85,7 +85,7 @@ async def check_birthdays_and_anniversaries():
     if notifications:
         await notifications_collection.insert_many([n.dict() for n in notifications])
 
-async def create_leave_notification(leave_request, notification_type, recipient_id):
+async def create_leave_notification(leave_request, notification_type, recipient_id, company_id):    
     message = {
         "leave_request": f"New leave request from {leave_request['employee_name']}",
         "leave_approved": f"Your leave request has been approved",
@@ -93,6 +93,7 @@ async def create_leave_notification(leave_request, notification_type, recipient_
     }
     
     notification = NotificationCreate(
+        company_id=company_id,
         recipient_id=recipient_id,
         type=notification_type,
         message=message[notification_type],

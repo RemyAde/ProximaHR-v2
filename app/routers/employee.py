@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, File, HTTPException, Depends, Request, UploadFile
-from db import companies_collection, employees_collection, leaves_collection
+from db import employees_collection, leaves_collection, admins_collection
 from models.employees import Employee
 from models.leaves import Leave
 from schemas.leave import CreateLeave
-from app.utils.app_utils import get_current_user
-from image_utils import create_media_file
+from schemas.notification import NotificationType
+from utils.app_utils import get_current_user
+from utils.notification_utils import create_leave_notification
+from utils.image_utils import create_media_file
 from exceptions import get_unknown_entity_exception
 
 UTC = timezone.utc
@@ -62,7 +64,26 @@ async def create_leave(
     # Save leave to the database
     leave_instance = Leave(**leave_dict)
     result = await leaves_collection.insert_one(leave_instance.model_dump())
+    
+    if result.inserted_id is None:
+        raise HTTPException(status_code=400, detail="Leave request not created")
+    
+    leave_notification_data = {}
+    if result.inserted_id:
+        company_admin = await admins_collection.find_one({"company_id": company_id, "role": "admin"})
 
+        leave_notification_data = {
+            "_id": str(result.inserted_id),
+            "employee_name": f"{employee.get('first_name')} {employee.get('last_name')}",
+            "status": "pending"
+        }
+
+    await create_leave_notification(
+        company_id=company_id,
+        recipient_id=company_admin.get("email"),
+        notification_type=NotificationType.LEAVE_REQUEST,
+        leave_request=leave_notification_data)
+    
     return {"message": "Leave request created successfully", "leave_id": str(result.inserted_id), "leave_days": leave_days}
 
 

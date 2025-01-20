@@ -9,7 +9,7 @@ from schemas.company import Company as CompanyCreate
 from schemas.admin import EmailInput
 from schemas.codes_and_pwds import Code, PasswordReset
 from models.companies import Company
-from app.utils.app_utils import (Token, send_verification_code, create_access_token, 
+from utils.app_utils import (Token, send_verification_code, create_access_token, 
                    authenticate_user, get_current_user, generate_email_verification_code,
                    store_random_codes_in_db, verify_verification_code, hash_password)
 
@@ -71,7 +71,7 @@ async def login_for_access_token(user_type: str, company_id: str = Query(...), f
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    expiry_time = timedelta(minutes=60)
+    expiry_time = timedelta(days=1)
     
     token = create_access_token(payload={"sub": form_data.username, "user_type": user_type, "company_id": user["company_id"]}, expiry=expiry_time)
     

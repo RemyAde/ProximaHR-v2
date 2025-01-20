@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 from pytz import UTC
 from fastapi import APIRouter, HTTPException, Depends, status
-from app.utils.report_analytics_utils import calculate_attendance_trend
+from utils.report_analytics_utils import calculate_attendance_trend
 from db import companies_collection, employees_collection, departments_collection, leaves_collection, timer_logs_collection
-from app.utils.app_utils import get_current_user
+from utils.app_utils import get_current_user
 from exceptions import get_user_exception, get_unknown_entity_exception
-from app.utils.dashboard_utils import get_upcoming_events_for_the_month
+from utils.dashboard_utils import get_upcoming_events_for_the_month
 
 router = APIRouter()
 

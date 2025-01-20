@@ -5,8 +5,8 @@ from pytz import UTC
 from fastapi import APIRouter, Depends, HTTPException, Query
 from db import employees_collection, timer_logs_collection
 from models.attendance import TimerLog
-from app.utils.attendance_utils import (calculate_attendance_status, get_ideal_monthly_hours)
-from app.utils.app_utils import get_current_user
+from utils.attendance_utils import (calculate_attendance_status, get_ideal_monthly_hours)
+from utils.app_utils import get_current_user
 
 router = APIRouter()
 
