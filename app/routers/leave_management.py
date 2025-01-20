@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from bson import ObjectId
 from db import leaves_collection, employees_collection
-from utils import get_current_user
+from app.utils.app_utils import get_current_user
 from exceptions import get_user_exception
 
 UTC = timezone.utc

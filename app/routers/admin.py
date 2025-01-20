@@ -3,7 +3,7 @@ from db import companies_collection, admins_collection
 from schemas.admin import CreateAdmin
 # from schemas.employee import ImageUpload
 from models.admins import Admin
-from utils import get_current_user, hash_password
+from app.utils.app_utils import get_current_user, hash_password
 from image_utils import create_media_file
 
 router = APIRouter()

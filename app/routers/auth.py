@@ -9,7 +9,7 @@ from schemas.company import Company as CompanyCreate
 from schemas.admin import EmailInput
 from schemas.codes_and_pwds import Code, PasswordReset
 from models.companies import Company
-from utils import (Token, send_verification_code, create_access_token, 
+from app.utils.app_utils import (Token, send_verification_code, create_access_token, 
                    authenticate_user, get_current_user, generate_email_verification_code,
                    store_random_codes_in_db, verify_verification_code, hash_password)
 

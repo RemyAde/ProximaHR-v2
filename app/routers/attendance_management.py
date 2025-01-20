@@ -3,14 +3,15 @@ from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Depends, Path
 from pytz import UTC
 from db import leaves_collection, timer_logs_collection, employees_collection
-from utils import get_current_user
+from app.utils.app_utils import get_current_user
+from app.utils.report_analytics_utils import calculate_attendance_trend
 
 router = APIRouter()
 
 
-@router.get("/{_id}/attendance")
+@router.get("/attendance")
 async def get_monthly_attendance_record(
-    _id :str = Path(..., description="Employee ID"),
+    employee_id :str = Path(..., description="Employee ID"),
     user_and_type: tuple = Depends(get_current_user)
 ):
     user, user_type = user_and_type
@@ -19,7 +20,7 @@ async def get_monthly_attendance_record(
         raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
     
     employee = await employees_collection.find_one({
-        "_id": ObjectId(_id),
+        "employee_id": employee_id,
         "company_id": user.get("company_id")
     })
     if not employee:
@@ -129,3 +130,22 @@ async def get_monthly_attendance_record(
             "presents": total_presents,
         }
     }
+
+
+@router.get("/metrics")
+async def get_metrics(user_and_type: tuple = Depends(get_current_user)):
+    user, user_type = user_and_type
+
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    
+    company_id = user["company_id"]
+
+    today = datetime.now(UTC)
+    start_date = datetime(today.year, today.month, 1, tzinfo=UTC)
+    end_date = today
+
+    # Fetch
+    attendance_rate = await calculate_attendance_trend(company_id=company_id, employees_collection=employees_collection, 
+                                                       timer_logs_collection=timer_logs_collection)
+    return  {"attendance_rate": attendance_rate["current_month_attendance_rate"]}

@@ -4,7 +4,7 @@ from db import companies_collection, employees_collection, leaves_collection
 from models.employees import Employee
 from models.leaves import Leave
 from schemas.leave import CreateLeave
-from utils import get_current_user
+from app.utils.app_utils import get_current_user
 from image_utils import create_media_file
 from exceptions import get_unknown_entity_exception
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from datetime import datetime, timezone, timedelta
 from pymongo import ASCENDING
 from db import employees_collection, companies_collection
-from utils import get_current_user
+from app.utils.app_utils import get_current_user
 
 router = APIRouter()
 

@@ -18,3 +18,4 @@ departments_collection = db.departments
 leaves_collection = db.leaves
 timer_logs_collection = db.timer_logs
 payroll_collection = db.payroll
+notifications_collection = db.notifications

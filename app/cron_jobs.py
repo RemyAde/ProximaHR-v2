@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 # Import your database collections and helper functions
 from db import employees_collection, companies_collection, payroll_collection
+from utils.notification_utils import check_birthdays_and_anniversaries
 
 # Create a shared scheduler instance
 scheduler = AsyncIOScheduler()
@@ -84,4 +85,12 @@ scheduler.add_job(
     hour=23,
     minute=59,  # Run on the last minute of the year
     timezone="UTC"
+)
+
+
+scheduler.add_job(
+    check_birthdays_and_anniversaries,
+    'cron',
+    hour=0,
+    minute=0
 )
