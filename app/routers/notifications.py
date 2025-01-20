@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime
 from pytz import UTC
 from typing import List
+from bson import ObjectId
 from db import notifications_collection
 from schemas.notification import NotificationResponse
 from utils.app_utils import get_current_user
@@ -59,7 +60,7 @@ async def mark_notification_read(
         recipient_id = user.get("employee_id")
     
     result = await notifications_collection.update_one(
-        {"_id": notification_id, "recipient_id": recipient_id},
+        {"_id": ObjectId(notification_id), "recipient_id": recipient_id},
         {"$set": {"is_read": True}}
     )
     

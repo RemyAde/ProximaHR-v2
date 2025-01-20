@@ -4,7 +4,9 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from bson import ObjectId
 from db import leaves_collection, employees_collection
+from schemas.notification import NotificationType
 from utils.app_utils import get_current_user
+from utils.notification_utils import create_leave_notification
 from exceptions import get_user_exception
 
 UTC = timezone.utc
@@ -106,9 +108,18 @@ async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_curren
     leave = await leaves_collection.find_one({"_id": ObjectId(leave_id)})
     if not leave:
         raise HTTPException(status_code=404, detail="Leave not found")
+    
+    if leave["company_id"] != user["company_id"]:
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this function")
+    
+    if leave["status"] == "approved":
+        raise HTTPException(status_code=400, detail="Leave has already been approved")
+    
+    if leave["status"] == "rejected":
+        raise HTTPException(status_code=400, detail="Leave has already been rejected")
 
-    user = await employees_collection.find_one({"employee_id": leave["employee_id"]})
-    if not user:
+    employee = await employees_collection.find_one({"employee_id": leave["employee_id"]})
+    if not employee:
         raise HTTPException(status_code=404, detail="User not found")
 
     leave_duration = leave["duration"]
@@ -123,6 +134,21 @@ async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_curren
     await leaves_collection.update_one(
         {"_id": ObjectId(leave_id)},
         {"$set": {"status": "approved"}}
+    )
+
+    # Prepare notification data
+    leave_notification_data = {
+        "_id": str(leave["_id"]),
+        "employee_name": f"{employee['first_name']} {employee['last_name']}",
+        "status": "approved"
+    }
+
+    # Create notification
+    await create_leave_notification(
+        leave_request=leave_notification_data,
+        notification_type=NotificationType.LEAVE_APPROVED,
+        recipient_id=employee["employee_id"],
+        company_id=employee["company_id"]
     )
 
     return {"message": "Leave approved and leave days deducted"}
@@ -148,10 +174,19 @@ async def reject_leave(leave_id: str, user_and_type: tuple = Depends(get_current
         if not leave_obj:
             raise HTTPException(status_code=404, detail="Leave not found or not associated with your company")
         
+        # Fetch the employee document
+        employee = await employees_collection.find_one({"employee_id": leave_obj["employee_id"], "company_id": company_id}) 
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee not found")
+        
+        # Ensure the leave has not already been approved
+        if str(leave_obj.get("status")) == "approved":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Leave has already been approved")
+        
         if str(leave_obj.get("status")) == "rejected":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Leave has already been rejected")
 
-        # Update the leave status to "approved"
+        # Update the leave status to "rejected"
         updated_leave = await leaves_collection.update_one(
             {"_id": ObjectId(leave_id), "company_id": company_id},
             {"$set": {"status": "rejected", "edited_at": datetime.now(UTC)}}
@@ -161,6 +196,21 @@ async def reject_leave(leave_id: str, user_and_type: tuple = Depends(get_current
             raise HTTPException(
                 status_code=400,
                 detail="Unable to approve the leave; it may have already been rejected"
+            )
+           
+        # Prepare notification data
+        leave_notification_data = {
+            "_id": str(leave_obj["_id"]),
+            "employee_name": f"{employee['first_name']} {employee['last_name']}",
+            "status": "rejected"
+            }
+
+        # Create notification
+        await create_leave_notification(
+            leave_request=leave_notification_data,
+            notification_type=NotificationType.LEAVE_REJECTED,
+            recipient_id=employee["employee_id"],
+            company_id=employee["company_id"]
             )
 
         return {"message": "Leave was successfully rejected"}
