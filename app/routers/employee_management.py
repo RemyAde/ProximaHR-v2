@@ -24,6 +24,39 @@ async def list_employees(
     ),  # Optional name/employee_id query parameter with documentation
     user_and_type: tuple = Depends(get_current_user),
 ):
+    """
+    Retrieve a paginated list of employees for a specific company with optional filtering.
+    This async function fetches employees from the database with various filter options
+    and pagination support. It requires admin privileges to access.
+    Args:
+        company_id (str): The registration number of the company
+        page (int, optional): The page number for pagination. Defaults to 1.
+        page_size (int, optional): Number of items per page. Defaults to 10.
+        department_name (Optional[str], optional): Filter employees by department name. Defaults to None.
+        name (Optional[str], optional): Search term for employee's first name, last name, or employee ID.
+            Case-insensitive search. Defaults to None.
+        user_and_type (tuple): Tuple containing user information and user type from authentication dependency.
+    Returns:
+        dict: A dictionary containing:
+            - staff_size: Total number of employees in the company
+            - List of employee dictionaries with following fields:
+                - company_id: Company registration number
+                - profile_image: URL of employee's profile image
+                - employee_id: Unique identifier for the employee
+                - name: Combined first and last name
+                - job_title: Employee's job title
+                - department: Employee's department
+                - work_mode: Employee's work mode (e.g., remote, office)
+                - position: Employee's position
+                - employment_status: Current employment status
+    Raises:
+        HTTPException: 
+            - 401 if user is not admin
+            - 404 if company not found
+            - 401 if user's company_id doesn't match requested company_id
+            - 400 for any other processing errors
+    """
+    
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()
@@ -91,6 +124,22 @@ async def get_employee_details(
     company_id: str,
     user_and_type: tuple = Depends(get_current_user)
 ):
+    """
+    Fetch detailed information for a specific employee.
+    This endpoint retrieves comprehensive details of an employee, accessible only by admin
+    or HR users within the same company.
+    Args:
+        employee_id (str): The unique identifier of the employee.
+        company_id (str): The registration number of the company.
+        user_and_type (tuple): A tuple containing the current user and their type (from dependency).
+    Returns:
+        dict: A dictionary containing the employee data with sensitive fields excluded.
+            Format: {"data": serialized_employee_dict}
+    Raises:
+        HTTPException (404): If the company or employee is not found.
+        HTTPException (403): If the user is not authorized (not admin or HR).
+        HTTPException (401): If the user is not from the same company.
+    """
     user, user_type = user_and_type
 
     company = await companies_collection.find_one({"registration_number": company_id})
@@ -122,6 +171,39 @@ async def get_employee_details(
 
 @router.post("/create-employee-profile")
 async def create_employee_profile(employee_request: CreateEmployee, company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Creates a new employee profile in the system with associated department and company updates.
+    This asynchronous function handles the creation of an employee profile, including salary calculations,
+    department assignment, and company staff size updates within a transaction.
+    Args:
+        employee_request (CreateEmployee): Pydantic model containing employee details including:
+            - employee_id
+            - email
+            - base_salary
+            - paye_deduction (percentage)
+            - employee_contribution (percentage)
+            - company_match (percentage)
+            - date_of_birth
+            - department (optional)
+        company_id (str): The registration number of the company
+        user_and_type (tuple): Tuple containing user details and user type from authentication dependency
+    Returns:
+        dict: A dictionary containing:
+            - message: Success message
+            - data: Dictionary with employee_id and generated password
+    Raises:
+        HTTPException: 
+            - 400: If company not found or employee already exists
+            - 401: If user is not authorized or not an admin
+            - 404: If specified department not found
+            - 500: If database transaction fails
+    Notes:
+        - Function performs all database operations within a transaction
+        - Automatically calculates net pay based on salary and deductions
+        - Updates both department and company staff counts
+        - Generates and hashes a password for the new employee
+    """
+
     user, user_type = user_and_type
 
     company = await companies_collection.find_one({"registration_number": company_id})
@@ -211,6 +293,30 @@ async def edit_employee_profile(
     employee_updates: EditEmployee,
     user_and_type: tuple = Depends(get_current_user)
 ):
+    """
+    Edit an employee's profile information.
+    This function allows an admin user to modify an existing employee's profile details.
+    The admin must belong to the same company as the employee to perform the edit.
+    Args:
+        employee_id (str): The unique identifier of the employee to be edited.
+        employee_updates (EditEmployee): Pydantic model containing the fields to update.
+        user_and_type (tuple): Tuple containing user information and user type from authentication.
+    Returns:
+        dict: A dictionary containing a success message and the updated fields.
+    Raises:
+        HTTPException: 
+            - 401 if user is not an admin
+            - 404 if employee is not found
+            - 403 if admin is not from the same company as employee
+            - 400 if no update data is provided or update fails
+    Example:
+        >>> response = await edit_employee_profile(
+        ...     "EMP123",
+        ...     EditEmployee(first_name="John", last_name="Doe"),
+        ...     (current_user, "admin")
+        ... )
+    """
+    
     user, user_type = user_and_type
 
     # Check if user is authorized
@@ -257,6 +363,27 @@ async def suspend_employee(
     suspension_data: dict,
     user_and_type: tuple = Depends(get_current_user)
 ):
+    """
+    Suspend an employee for a specified period.
+    This function updates an employee's status to 'suspended' and records suspension details.
+    Only company administrators can suspend employees within their own company.
+    Args:
+        company_id (str): The ID of the company
+        employee_id (str): The ID of the employee to suspend
+        suspension_data (dict): Dictionary containing suspension details including:
+            - start_date (str): Suspension start date in "YYYY-MM-DD" format
+            - end_date (str): Suspension end date in "YYYY-MM-DD" format
+        user_and_type (tuple): Tuple containing user information and type (from dependency)
+    Raises:
+        HTTPException: 
+            - 403: If user is not an admin
+            - 404: If employee is not found
+            - 400: If end date is not after start date
+        UserException: If company_id doesn't match user's company
+    Returns:
+        dict: Message confirming successful suspension
+    """
+    
     user, user_type = user_and_type
     
     # Check if the user is authorized
@@ -297,6 +424,24 @@ async def deactivate_employee(
     deactivation_data: dict,
     user_and_type: tuple = Depends(get_current_user)
 ):
+    """
+    Deactivates an employee by updating their employment status to 'inactive'.
+    Args:
+        company_id (str): The ID of the company.
+        employee_id (str): The ID of the employee to deactivate.
+        deactivation_data (dict): Data related to the deactivation (e.g., reason, date).
+        user_and_type (tuple, optional): Tuple containing user info and type. Defaults to Depends(get_current_user).
+    Raises:
+        HTTPException: If user is not authorized (403) or employee is not found (404).
+        UserException: If company_id doesn't match user's company_id.
+    Returns:
+        dict: A message confirming successful deactivation.
+    Example:
+        >>> deactivation_data = {"reason": "Retirement", "date": "2023-12-31"}
+        >>> await deactivate_employee("comp123", "emp456", deactivation_data)
+        {"message": "Employee successfully deactivated"}
+    """
+    
     user, user_type = user_and_type
     
     # Check if the user is authorized

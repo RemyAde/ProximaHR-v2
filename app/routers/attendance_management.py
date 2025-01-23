@@ -14,8 +14,39 @@ async def get_monthly_attendance_record(
     employee_id :str = Path(..., description="Employee ID"),
     user_and_type: tuple = Depends(get_current_user)
 ):
-    user, user_type = user_and_type
+    """Retrieves and generates a monthly attendance record for a specific employee.
+    This function fetches and analyzes attendance data for an employee within the current month,
+    including approved leaves, work hours, and various attendance statuses.
+    Args:
+        employee_id (str): The unique identifier for the employee.
+        user_and_type (tuple): A tuple containing user information and user type,
+            obtained from the get_current_user dependency.
+    Returns:
+        dict: A dictionary containing:
+            - attendance_summary (list): Daily attendance records with the following fields:
+                - date (date): The date of the record
+                - attendance_status (str): One of 'present', 'absent', 'undertime', or 'on_leave'
+                - hours_worked (float): Number of hours worked, rounded to 2 decimal places
+                - overtime (int): 1 if overtime was worked, 0 otherwise
+                - undertime (int): 1 if undertime was recorded, 0 otherwise
+                - absent (int): 1 if marked as absent, 0 otherwise
+            - totals (dict): Summary counts including:
+                - leave_days (int): Total number of approved leave days
+                - absences (int): Total number of absences
+                - undertimes (int): Total number of undertime days
+                - presents (int): Total number of present days
+    Raises:
+        HTTPException: 
+            - 403 if user is not an admin
+            - 400 if employee is not found in the company
+    Notes:
+        - An employee is considered:
+            - Present: if worked >= 90% of required hours
+            - Undertime: if worked between 40% and 90% of required hours
+            - Absent: if worked < 40% of required hours
+    """
 
+    user, user_type = user_and_type
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
     
@@ -134,6 +165,20 @@ async def get_monthly_attendance_record(
 
 @router.get("/metrics")
 async def get_metrics(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieve attendance metrics for a company.
+    This endpoint requires admin privileges and returns the current month's attendance rate
+    for all employees in the company.
+    Args:
+        user_and_type (tuple): A tuple containing user information and user type, obtained from
+            the dependency get_current_user.
+    Returns:
+        dict: A dictionary containing:
+            - attendance_rate (float): The attendance rate for the current month
+    Raises:
+        HTTPException:
+            - 403: If the user is not an admin
+    """
     user, user_type = user_and_type
 
     if user_type != "admin":

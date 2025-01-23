@@ -9,6 +9,23 @@ router = APIRouter()
 
 @router.get("/")
 async def get_payroll(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieve payroll information for a specific company.
+    This endpoint is restricted to admin users and can only be accessed by users
+    belonging to the specified company.
+    Args:
+        company_id (str): The unique identifier of the company.
+        user_and_type (tuple): A tuple containing user information and user type,
+            obtained from the get_current_user dependency.
+            First element is the user dict, second element is the user type string.
+    Raises:
+        HTTPException: 
+            - 403 if the user is not an admin
+            - 403 if the user doesn't belong to the specified company
+    Returns:
+        dict: Payroll information for the specified company.
+    """
+
     user, user_type = user_and_type
 
     if user_type != "admin":
@@ -23,6 +40,24 @@ async def get_payroll_summary(
     company_id: str = Query(..., description="Company ID to filter payroll data"),
     user_and_type: tuple = Depends(get_current_user)
 ):
+    """
+    Retrieve a summary of payroll information for a specific company.
+    This endpoint is restricted to admin users and can only be accessed by users
+    belonging to the specified company.
+    Args:
+        company_id (str): The
+        unique identifier of the company.
+        user_and_type (tuple): A tuple containing user information and user type,
+            obtained from the get_current_user dependency.
+            First element is the user dict, second element is the user type string.
+    Raises:
+        HTTPException: 
+            - 403 if the user is not an admin
+            - 403 if the user doesn't belong to the specified company
+            - 500 if an exception occurs during the database operation
+    Returns:
+        dict: Summary of payroll information for the specified company
+    """
     user, user_type = user_and_type
 
     if user_type != "admin":
@@ -107,7 +142,34 @@ async def get_payroll_cost_trend(
     year: int = Query(None, description="Year to view payroll trend"),
     user_and_type: tuple = Depends(get_current_user)
 ):
-    
+    """
+    Retrieves the payroll cost trend data for a specific company over a year.
+    This async function calculates and returns monthly payroll costs for a company,
+    aggregating various salary components for all active employees.
+    Args:
+        company_id (str): The unique identifier of the company to analyze
+        year (int, optional): The year to analyze payroll trends for. Defaults to current year
+        user_and_type (tuple): Tuple containing user information and type, obtained from dependency
+    Returns:
+        dict: A dictionary containing:
+            - company_id (str): The company identifier
+            - year (int): The analyzed year
+            - payroll_cost_trend (list): List of dictionaries containing:
+                - month (int): Month number (1-12)
+                - payroll_cost (float): Total payroll cost for that month
+    Raises:
+        HTTPException: 
+            - 403: If user is not admin or not authorized for the company
+            - 404: If no employee data exists for the company
+            - 400: If specified year is invalid
+            - 500: For any other server-side errors
+    Notes:
+        - Only admin users can access this endpoint
+        - Includes base salary and all allowances in cost calculation
+        - Inactive employees are excluded from calculations
+        - Returns 0 for months with no payroll data
+    """
+
     user, user_type = user_and_type
 
     if user_type != "admin":
@@ -277,6 +339,34 @@ async def get_employees(
     allowance: bool = Query(False, description="Option to view allowances and contributions"),
     user_and_type: tuple = Depends(get_current_user)
 ):
+    """
+    Retrieve employee payroll information for a specific company.
+    This endpoint is restricted to admin users and can only be accessed by users
+    belonging to the specified company.
+    Args:
+        company_id (str): The
+        unique identifier of the company.
+        page (int): The page number to retrieve (default: 1)
+        page_size (int): The number of records to retrieve per page (default: 10)
+        name (str): Search by employee's first name, last name, or employee ID.
+        year (int): Year to view payroll data.
+        department (str): Department to view payroll data.
+        status (str): Employee payment status: paid|unpaid.
+        allowance (bool): Option to view allowances and contributions.
+        user_and_type (tuple): A tuple containing user information and user type,
+            obtained from the get_current_user dependency.
+            First element is the user dict, second element is the user type string.
+    Raises:
+        HTTPException: 
+            - 403 if the user is not an admin
+            - 403 if the user doesn't belong to the specified company
+            - 404 if no employee data exists for the company
+            - 400 if specified year is invalid
+            - 500 if an exception occurs during the database operation
+    Returns:
+        dict: Employee payroll information for the specified company.
+    """
+    
     user, user_type = user_and_type
 
     existing_company = await companies_collection.find_one(

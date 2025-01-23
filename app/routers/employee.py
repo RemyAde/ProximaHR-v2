@@ -21,6 +21,28 @@ async def create_leave(
     leave_request: CreateLeave, 
     user_and_type: tuple = Depends(get_current_user)
 ):
+    """Create a new leave request for an employee.
+    This function handles the creation of leave requests, including validation of dates,
+    leave duration, and employee eligibility. It also sends notifications to company admins.
+    Args:
+        company_id (str): The ID of the company.
+        leave_request (CreateLeave): The leave request details including start_date and end_date.
+        user_and_type (tuple): Tuple containing user information and user type from authentication.
+    Returns:
+        dict: A dictionary containing:
+            - message: Success message
+            - leave_id: The ID of the created leave request
+            - leave_days: Number of annual leave days available
+    Raises:
+        HTTPException: In the following cases:
+            - 403: If user is not authorized for the company
+            - 400: If end date is before start date
+            - 400: If requested duration exceeds available leave days
+            - 400: If leave is requested for past dates
+            - 400: If there's an existing unresolved leave request
+            - 400: If leave request creation fails
+        UnknownEntityException: If employee is not found
+    """
     user, user_type = user_and_type
 
     if company_id != user.get("company_id"):
@@ -89,6 +111,27 @@ async def create_leave(
 
 @router.post("/profile-image-upload")
 async def upload_profile_image(request: Request, company_id: str, image_file: UploadFile = File(...), user_and_type: tuple = Depends(get_current_user)):
+    """
+    Upload a profile image for an employee.
+    This async function handles the upload of a profile image for an employee, validates user permissions,
+    and updates the employee's profile in the database with the new image URL.
+    Args:
+        request (Request): The FastAPI request object containing base URL information.
+        company_id (str): The ID of the company the employee belongs to.
+        image_file (UploadFile): The image file to be uploaded (passed as a File).
+        user_and_type (tuple): A tuple containing user information and user type (from dependency injection).
+    Returns:
+        dict: A message confirming successful upload.
+    Raises:
+        HTTPException: 
+            - 403: If the user is not authorized (company_id mismatch)
+            - 400: If no image file is provided
+            - 400: If the profile image update fails in the database
+    Dependencies:
+        - get_current_user: For user authentication and authorization
+        - create_media_file: For handling the file upload process
+    """
+
     user, user_type = user_and_type
 
     if company_id != user.get("company_id"):
@@ -113,6 +156,24 @@ async def upload_profile_image(request: Request, company_id: str, image_file: Up
 
 @router.delete("/delete-profile-image")
 async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Deletes the profile image of an employee.
+    This async function removes the profile image reference from the employee's document
+    in the database. It requires company_id authentication and verifies user permissions.
+    Args:
+        company_id (str): The ID of the company the employee belongs to.
+        user_and_type (tuple): A tuple containing user information and user type,
+            obtained from the get_current_user dependency.
+    Raises:
+        HTTPException: 
+            - 403 if user is not authorized (company_id mismatch)
+            - 400 if image deletion was unsuccessful
+    Returns:
+        None
+    Note:
+        The actual image file removal from server storage is not yet implemented.
+    """
+
     user, user_type = user_and_type
 
     if company_id != user["company_id"]:

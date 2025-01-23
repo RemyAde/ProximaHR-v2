@@ -12,6 +12,22 @@ router = APIRouter()
 
 @router.post("/employee/timer/start")
 async def start_timer(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Starts a timer log for an employee's attendance.
+    This function creates a new timer log entry in the database with the current timestamp
+    for a specific employee within their company.
+    Args:
+        user_and_type (tuple): A tuple containing user information and user type, obtained from get_current_user dependency.
+                              user: Dictionary containing 'company_id' and 'employee_id'
+                              user_type: The type/role of the user
+    Returns:
+        dict: A dictionary with a success message if timer starts successfully
+            Example: {"message": "Timer started successfully"}
+    Raises:
+        HTTPException: If there's an error during the timer creation process
+            - status_code: 400
+            - detail: Error message with the specific exception details
+    """
     user, user_type = user_and_type
 
     try:
@@ -26,6 +42,25 @@ async def start_timer(user_and_type: tuple = Depends(get_current_user)):
 
 @router.post("/employee/timer/pause")
 async def pause_timer(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Pauses an active timer for the current user.
+    This function adds a new pause interval to the user's active timer log. It finds the active timer
+    by looking for a timer log with no end_time and adds a new pause interval with the current time
+    as the start time.
+    Args:
+        user_and_type (tuple): A tuple containing the user object and user type, obtained from get_current_user dependency.
+                              The user object must contain 'company_id' and 'employee_id'.
+    Returns:
+        dict: A dictionary containing a success message if the timer was successfully paused.
+              Example: {"message": "Timer paused"}
+    Raises:
+        HTTPException: 
+            - 404 if no active timer is found
+            - 400 if any other error occurs during the operation
+    Dependencies:
+        - get_current_user
+        - timer_logs_collection (MongoDB collection)
+    """
     user, user_type = user_and_type
 
     try:
@@ -45,6 +80,26 @@ async def pause_timer(user_and_type: tuple = Depends(get_current_user)):
 
 @router.post("/employee/timer/resume")
 async def resume_timer(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Resume a previously paused timer for a user.
+    This function finds the most recent timer log for the user that is currently paused
+    and adds an end timestamp to the latest pause interval, effectively resuming the timer.
+    Args:
+        user_and_type (tuple): A tuple containing the user object and user type,
+                              obtained from the get_current_user dependency.
+    Returns:
+        dict: A dictionary containing a success message
+            Example: {"message": "Timer resumed"}
+    Raises:
+        HTTPException: 
+            - 404 if no paused timer is found
+            - 400 if the timer is not currently paused
+            - 400 if any other error occurs during execution
+    Dependencies:
+        - get_current_user
+        - timer_logs_collection (MongoDB collection)
+    """
+
     user, user_type = user_and_type
 
     try:
@@ -68,6 +123,28 @@ async def resume_timer(user_and_type: tuple = Depends(get_current_user)):
 
 @router.post("/employee/timer/stop")
 async def stop_timer(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Stops an active timer for the current user and calculates total worked hours.
+    This function finds the active timer for the user, calculates the total hours worked
+    (excluding any paused intervals), and updates the timer log with the end time and 
+    total hours worked.
+    Args:
+        user_and_type (tuple): A tuple containing user information and user type, obtained from get_current_user dependency.
+            The user dict contains 'company_id' and 'employee_id'.
+    Returns:
+        dict: A dictionary containing:
+            - message (str): Confirmation message "Timer stopped"
+            - total_hours (float): Total hours worked, excluding paused intervals
+    Raises:
+        HTTPException: 
+            - 404 if no active timer is found
+            - 400 if any other error occurs during execution
+    Notes:
+        - All datetime calculations are performed in UTC
+        - Handles both timezone-aware and naive datetime objects by assuming UTC for naive ones
+        - Takes into account paused intervals when calculating total hours worked
+    """
+
     user, user_type = user_and_type
 
     try:
@@ -158,6 +235,9 @@ async def calculate_daily_attendance(
 
 @router.get("/employee/monthly-attendance-percentage")
 async def calculate_monthly_attendance_percentage(month: int, year: int, user_and_type: tuple = Depends(get_current_user)):
+    """ 
+    Calculate the monthly attendance percentage for an employee.
+    """
     user, user_type = user_and_type
 
     try:

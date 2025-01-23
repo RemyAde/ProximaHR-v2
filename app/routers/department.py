@@ -13,6 +13,29 @@ router = APIRouter()
 
 @router.get("/")
 async def list_departments(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieve a list of all departments for a given company.
+    This async function fetches all departments belonging to a company, including details about
+    their Heads of Department (HOD) if available. Only admin users can access this endpoint.
+    Args:
+        company_id (str): The registration number of the company
+        user_and_type (tuple): A tuple containing user information and user type, obtained from get_current_user dependency
+    Returns:
+        dict: A dictionary containing list of departments with their details:
+            - departments: List of dictionaries containing:
+                - id (str): Department's unique identifier
+                - name (str): Name of the department
+                - staff_size (str): Number of staff in the department
+                - hod (dict|None): Head of Department details if exists:
+                    - first_name (str): HOD's first name
+                    - last_name (str): HOD's last name
+                - description (str): Department description
+    Raises:
+        HTTPException: If user is not admin, company doesn't exist, or any other error occurs
+        UserException: If user does not have permission to access company data
+        UnknownEntityException: If company is not found
+    """
+
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()
@@ -59,7 +82,28 @@ async def create_department(
     company_id: str, 
     department_request: DepartmentCreate, 
     user_and_type: tuple = Depends(get_current_user)
-):
+):  
+    """
+    Create a new department within a company.
+    This async function creates a department, validates the HOD and staff members,
+    and ensures proper permissions and data consistency.
+    Args:
+        company_id (str): The registration number of the company
+        department_request (DepartmentCreate): Pydantic model containing department details
+        user_and_type (tuple): Tuple containing user details and type, obtained from dependency
+    Returns:
+        dict: A message confirming successful department creation
+    Raises:
+        HTTPException: In the following cases:
+            - User is not an admin (403)
+            - Company doesn't exist (404)
+            - User is not part of the company (403)
+            - Department name already exists (400)
+            - Invalid HOD employee ID (400)
+            - HOD not in staff list (400)
+            - Invalid staff member employee ID (400)
+            - Unexpected errors (400)
+    """
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()
@@ -318,6 +362,22 @@ async def edit_department(
 
 @router.delete("/{department_id}/delete-department")
 async def delete_department(department_id: str, company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Deletes a department from the database.
+    This async function removes a department entry from the departments collection. It performs
+    authorization checks to ensure only admin users can delete departments within their company.
+    Args:
+        department_id (str): The unique identifier of the department to delete
+        company_id (str): The registration number of the company
+        user_and_type (tuple): A tuple containing user information and user type, obtained from get_current_user dependency
+    Returns:
+        dict: A message confirming successful deletion of the department
+    Raises:
+        HTTPException: If user is not authorized (not admin or wrong company)
+        HTTPException: If company or department is not found
+        HTTPException: If any other error occurs during the deletion process
+    """
+
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()

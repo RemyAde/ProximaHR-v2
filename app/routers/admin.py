@@ -11,6 +11,32 @@ router = APIRouter()
 
 @router.post("/create-admin")
 async def create_admin(admin_obj: CreateAdmin, company_id: str):
+    """
+    Creates a new admin user for a company.
+    This function performs the following operations:
+    1. Verifies if the company exists
+    2. Checks if an admin already exists for the company or email
+    3. Validates the admin creation code
+    4. Checks if the company has reached its admin limit
+    5. Creates and stores the new admin
+    6. Updates the company's admin list and staff size
+    Args:
+        admin_obj (CreateAdmin): The admin object containing admin details including:
+            - email
+            - password
+            - admin_code
+            - other admin-related fields
+        company_id (str): The registration number of the company
+    Returns:
+        dict: A message confirming successful admin creation
+    Raises:
+        HTTPException (400): If company not found, admin already registered, or admin limit reached
+        HTTPException (401): If invalid admin creation code provided
+    Example:
+        >>> admin = CreateAdmin(email="admin@example.com", password="secure123", admin_code="ABC123")
+        >>> await create_admin(admin, "COMP123")
+        {"message": "Admin created successfully"}
+    """
     company = await companies_collection.find_one({"registration_number": company_id})
     if not company:
         raise HTTPException(status_code=400, detail="Company not found")
@@ -51,6 +77,24 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str):
 
 @router.post("/profile-image-upload")
 async def upload_profile_image(request: Request, company_id: str, image_file: UploadFile = File(...), user_and_type: tuple = Depends(get_current_user)):
+    """
+    Uploads a profile image for the company admin.
+    Args:
+        request (Request): The FastAPI request object containing base URL information
+        company_id (str): The ID of the company
+        image_file (UploadFile): The image file to be uploaded
+        user_and_type (tuple): Tuple containing user information and user type from authentication
+    Returns:
+        dict: A message indicating successful upload
+    Raises:
+        HTTPException: 
+            - 403 if user is not authorized for the company
+            - 400 if no image file is provided
+            - 400 if profile image upload fails
+    Dependencies:
+        - get_current_user: For user authentication
+        - create_media_file: For handling file upload
+    """
     user, user_type = user_and_type
 
     if company_id != user.get("company_id"):
@@ -75,6 +119,20 @@ async def upload_profile_image(request: Request, company_id: str, image_file: Up
 
 @router.delete("/delete-profile-image")
 async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Delete profile image for a company admin.
+    This function removes the profile image reference from the admin's document in the database.
+    The user must be authenticated and belong to the company they are trying to modify.
+    Args:
+        company_id (str): The ID of the company whose admin's profile image should be deleted
+        user_and_type (tuple): A tuple containing user information and type, obtained from authentication dependency
+    Returns:
+        None
+    Raises:
+        HTTPException: 
+            - 403 if user is not authorized (company_id mismatch)
+            - 400 if image reference could not be deleted
+    """
     user, user_type = user_and_type
 
     if company_id != user["company_id"]:

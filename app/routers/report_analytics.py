@@ -67,6 +67,21 @@ async def get_leave_utilization(user_and_type: tuple = Depends(get_current_user)
 
 @router.get("/payroll", response_model=dict)
 async def get_payroll_cost_and_trend(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieve the payroll cost and trend for the current and previous year for a given company.
+    Args:
+        user_and_type (tuple): A tuple containing the current user and their type, 
+                               obtained from the dependency injection of `get_current_user`.
+    Returns:
+        dict: A dictionary containing the following keys:
+            - company_id (str): The ID of the company.
+            - payroll_cost (float): The total payroll cost for the current year.
+            - trend (float): The percentage change in payroll cost from the previous year to the current year.
+    Raises:
+        HTTPException: If the user is not an admin (status code 403).
+        HTTPException: If there is an error retrieving payroll data (status code 500).
+    """
+    
     user, user_type = user_and_type
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Only admins can access this data.")

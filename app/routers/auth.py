@@ -22,6 +22,31 @@ def generate_code():
 
 @router.post("/register_company")
 async def register_company(company: CompanyCreate, background_tasks: BackgroundTasks):
+    """
+    Register a new company in the system.
+    This function handles the registration of a new company by:
+    1. Checking for existing companies with the same registration number or email
+    2. Generating an admin creation code
+    3. Creating and storing the company record
+    4. Sending a verification email with the admin creation code
+    Args:
+        company (CompanyCreate): A Pydantic model containing company registration details
+            including name, registration number, and email
+        background_tasks (BackgroundTasks): FastAPI background tasks handler for async email sending
+    Returns:
+        dict: A dictionary containing:
+            - message (str): Success message
+            - data (list): List containing registered company details (name, registration number, email)
+    Raises:
+        HTTPException: 400 status code if company is already registered with given email or registration number
+    Example:
+        company_data = CompanyCreate(
+            name="Example Corp",
+            registration_number="12345",
+            email="admin@example.com"
+        result = await register_company(company_data, background_tasks)
+    """
+
     existing_company = await companies_collection.find_one({
     "$or": [
         {"registration_number": company.registration_number},
@@ -62,7 +87,24 @@ async def register_company(company: CompanyCreate, background_tasks: BackgroundT
 
 @router.post("/login", response_model=Token)
 async def login_for_access_token(user_type: str, company_id: str = Query(...), form_data: OAuth2PasswordRequestForm = Depends()):
- 
+    """
+    Get an access token for a user.
+    This function handles the login of a user by:
+    1. Authenticating the user with the provided username and password
+    2. Creating an access token for the user
+    Args:
+        user_type (str): The type of user (admin or employee)
+        company_id (str): The
+        form_data (OAuth2PasswordRequestForm): Pydantic model containing username and password
+    Returns:
+        dict: A dictionary containing:
+            - access_token (str): JWT access token
+            - token_type (str): Token type
+    Raises:
+        HTTPException: 401 status code if invalid login details
+    Example:
+        result = await login_for_access_token("admin", "12345", form_data)
+    """
     user = await authenticate_user(company_id=company_id, pk=form_data.username, password=form_data.password, user_type=user_type)
     if not user:
         raise HTTPException(
@@ -80,6 +122,22 @@ async def login_for_access_token(user_type: str, company_id: str = Query(...), f
 
 @router.post("/send-verification-code-email")
 async def send_reset_password_verification_email(email_data: EmailInput, background_tasks: BackgroundTasks):
+    """
+    Send a password reset verification code via email.
+    This function handles the password reset process by:
+    1. Verifying the email exists in the database
+    2. Generating a verification code
+    3. Storing the code in the database
+    4. Sending the code to the user's email
+    Args:
+        email_data (EmailInput): Object containing the user's email address
+        background_tasks (BackgroundTasks): FastAPI background tasks object for async email sending
+    Returns:
+        dict: A message indicating the reset code was sent successfully
+    Raises:
+        HTTPException: If the email address is not found in the database (status code 400)
+    """
+
     email = email_data.email
 
     user = await admins_collection.find_one({"email": email})
@@ -103,11 +161,45 @@ async def send_reset_password_verification_email(email_data: EmailInput, backgro
 
 @router.post("/verify-password-reset-verification-code")
 async def verify_pwd_reset_code(email: EmailStr = Query(...), code: Code = Body(...)):
+    """
+    Verify password reset code for given email address.
+    This endpoint verifies that the provided password reset code matches the one sent to the user's email.
+    Args:
+        email (EmailStr): Email address of the user requesting password reset.
+        code (Code): Password reset code model containing the verification code sent to user's email.
+    Raises:
+        HTTPException: If code is invalid or expired, with status code 400.
+        HTTPException: If email does not exist in the system, with status code 400.
+    Returns:
+        None: Returns nothing if verification is successful.
+    """
+
     await verify_verification_code(email, code.code)
 
 
 @router.post("/reset-password")
 async def reset_password(email: EmailStr = Query(...), passwords: PasswordReset = Body(...)):
+    """
+    Resets the user's password after verification of reset code.
+    This endpoint updates the password for either an admin or employee user after verifying that
+    they have validated their password reset code via email.
+    Args:
+        email (EmailStr): The email address of the user requesting password reset
+        passwords (PasswordReset): Object containing the new password to be set
+    Returns:
+        dict: A message confirming successful password reset
+    Raises:
+        HTTPException(400): If user code not found or not verified
+        HTTPException(404): If user email not found in admin or employee database
+    Example:
+        ```
+        POST /reset-password?email=user@example.com
+        {
+            "new_password": "newpassword123"
+        }
+        ```
+    """
+
     new_password = passwords.new_password
 
     user_code = await random_codes_collection.find_one({"user_email": email})

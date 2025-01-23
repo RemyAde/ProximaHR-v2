@@ -36,6 +36,31 @@ async def list_leaves(
     limit: int = Query(10, ge=1, le=100, description="Number of items to return"),
     user_and_type: tuple = Depends(get_current_user)
 ):
+    """
+    List all leaves for a given company with optional status filtering and pagination.
+    This async function retrieves leave records from the database, including employee details
+    for each leave request. Only admin users can access this endpoint.
+    Args:
+        company_id (str): The ID of the company to list leaves for
+        status (Optional[str]): Filter leaves by status ('pending', 'approved', or 'rejected')
+        skip (int): Number of records to skip for pagination (default: 0)
+        limit (int): Maximum number of records to return (default: 10, max: 100)
+        user_and_type (tuple): Tuple containing user object and user type from authentication
+    Returns:
+        dict: A dictionary containing:
+            - leave_count (int): Total number of leaves
+            - pending_leave_count (int): Number of pending leaves
+            - approved_leave_count (int): Number of approved leaves
+            - rejected_leave_count (int): Number of rejected leaves
+            - leave_data (list): List of leave records with employee details
+            - skip (int): Number of records skipped
+            - limit (int): Number of records returned
+    Raises:
+        HTTPException: 
+            - 403: If user is not an admin
+            - 401: If company_id doesn't match user's company
+            - 400: For any other errors during execution
+    """
     user, user_type = user_and_type
 
     if user_type != "admin":
@@ -100,6 +125,27 @@ async def list_leaves(
 
 @router.post("/{leave_id}/approve")
 async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Approves a leave request and updates related records.
+    This function handles the approval process of a leave request by an admin user. It performs
+    several validations, updates the leave status, deducts leave days from the employee's balance,
+    and creates a notification for the employee.
+    Args:
+        leave_id (str): The ID of the leave request to be approved.
+        user_and_type (tuple): A tuple containing the current user's information and type, obtained from authentication.
+    Returns:
+        dict: A message confirming the leave approval.
+    Raises:
+        HTTPException: 
+            - 403: If the user is not an admin or doesn't belong to the same company
+            - 404: If the leave request or employee is not found
+            - 400: If the leave has already been approved or rejected
+    Example:
+        >>> response = await approve_leave("5f7d3a2b8e9d4c1f2a3b4c5d", user_and_type)
+        >>> print(response)
+        {"message": "Leave approved and leave days deducted"}
+    """
+
     user, user_type = user_and_type
 
     if user_type != "admin":
@@ -156,6 +202,30 @@ async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_curren
 
 @router.post("/{leave_id}/reject", status_code=status.HTTP_200_OK)
 async def reject_leave(leave_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Reject a leave request for an employee.
+    This async function handles the rejection of leave requests by admin users. It performs several
+    checks to ensure the request is valid and updates the leave status to 'rejected' in the database.
+    Args:
+        leave_id (str): The unique identifier of the leave request to be rejected.
+        user_and_type (tuple): A tuple containing user information and user type, obtained from dependency injection.
+                              Format: (user_dict, user_type_str)
+    Returns:
+        dict: A message confirming successful rejection of the leave request.
+            Format: {"message": "Leave was successfully rejected"}
+    Raises:
+        HTTPException: 
+            - 403: If the user is not an admin
+            - 404: If leave request or employee is not found
+            - 403: If leave has already been approved or rejected
+            - 400: If there's an error updating the leave status
+            - 400: For any other unexpected errors during execution
+    Dependencies:
+        - MongoDB collections: leaves_collection, employees_collection
+        - Authentication: get_current_user dependency
+        - Notification system: create_leave_notification function
+    """
+
     user, user_type = user_and_type
 
     # Ensure the user is an admin
