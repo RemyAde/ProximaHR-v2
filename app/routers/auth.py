@@ -10,8 +10,9 @@ from schemas.admin import EmailInput
 from schemas.codes_and_pwds import Code, PasswordReset
 from models.companies import Company
 from utils.app_utils import (Token, send_verification_code, create_access_token, 
-                   authenticate_user, get_current_user, generate_email_verification_code,
-                   store_random_codes_in_db, verify_verification_code, hash_password)
+                   authenticate_user, generate_email_verification_code,
+                   store_random_codes_in_db, verify_verification_code, 
+                   hash_password, get_current_user)
 
 router = APIRouter()
 
@@ -228,3 +229,46 @@ async def reset_password(email: EmailStr = Query(...), passwords: PasswordReset 
             raise HTTPException(status_code=404, detail="User with email not found in admin or employee database")
     
     return {"message": "Password reset successfully"}
+
+
+@router.post("/change-password")
+async def change_password(passwords: PasswordReset = Body(...), user_and_type: tuple = Depends(get_current_user)):
+    """
+    Change the password for the current user.
+    This function changes the password for the current user (admin or employee) by:
+    1. Verifying that the new password and confirm password match
+    2. Hashing the new password
+    3. Updating the password in the database
+    Args:
+        passwords (PasswordReset): Pydantic model containing the new password and confirm password
+        user_and_type (tuple): Tuple containing the user's email and user type (admin or employee)
+    Returns:
+        dict: A message confirming successful password change
+    Raises:
+        HTTPException: 400 status code if new password and confirm password do not match
+    Example:
+        result = await change_password(passwords, user_and_type)
+    """
+          
+    user, user_type = user_and_type
+
+    new_password = passwords.new_password
+    confirm_password = passwords.confirm_password
+
+    if new_password != confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+
+    hashed_password = hash_password(new_password)
+    
+    if user_type == "admin":
+        await admins_collection.update_one(
+            {"email": user},
+            {"$set": {"password": hashed_password}}
+        )
+    else:
+        await employees_collection.update_one(
+            {"email": user},
+            {"$set": {"password": hashed_password}}
+        )   
+
+    return {"message": "Password changed successfully"}
