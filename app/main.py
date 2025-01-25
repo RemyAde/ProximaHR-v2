@@ -1,6 +1,3 @@
-import requests
-import time 
-import threading
 import logging 
 from cron_jobs import scheduler
 
@@ -47,6 +44,7 @@ app.add_middleware(
         "https://hrm-project-rosy.vercel.app",
         "http://localhost:3000",
         "http://127.0.0.1:3000"
+        "http://127.0.0.1:5167"
         ],
     allow_credentials = True,
     allow_methods=["*"],
