@@ -7,12 +7,12 @@ from datetime import timedelta
 from db import companies_collection, admins_collection, employees_collection, random_codes_collection
 from schemas.company import Company as CompanyCreate
 from schemas.admin import EmailInput
-from schemas.codes_and_pwds import Code, PasswordReset
+from schemas.codes_and_pwds import Code, PasswordReset, ChangePassword
 from models.companies import Company
 from utils.app_utils import (Token, send_verification_code, create_access_token, 
                    authenticate_user, generate_email_verification_code,
                    store_random_codes_in_db, verify_verification_code, 
-                   hash_password, get_current_user)
+                   hash_password, verify_password, get_current_user)
 
 router = APIRouter()
 
@@ -200,7 +200,6 @@ async def reset_password(email: EmailStr = Query(...), passwords: PasswordReset 
         }
         ```
     """
-
     new_password = passwords.new_password
 
     user_code = await random_codes_collection.find_one({"user_email": email})
@@ -231,26 +230,49 @@ async def reset_password(email: EmailStr = Query(...), passwords: PasswordReset 
     return {"message": "Password reset successfully"}
 
 
-@router.post("/change-password")
-async def change_password(passwords: PasswordReset = Body(...), user_and_type: tuple = Depends(get_current_user)):
+@router.post("/auth/change-password")
+async def change_password(passwords: ChangePassword = Body(...), user_and_type: tuple = Depends(get_current_user)):
     """
-    Change the password for the current user.
-    This function changes the password for the current user (admin or employee) by:
-    1. Verifying that the new password and confirm password match
-    2. Hashing the new password
-    3. Updating the password in the database
-    Args:
-        passwords (PasswordReset): Pydantic model containing the new password and confirm password
-        user_and_type (tuple): Tuple containing the user's email and user type (admin or employee)
+    Change the password for the authenticated user.
+    This asynchronous function verifies the current password and updates it with a new one
+    for both admin and employee users. It ensures the new password matches the confirmation
+    and updates the appropriate collection in the database.
+    Parameters:
+    ----------
+    passwords : ChangePassword
+        A Pydantic model containing:
+        - current_password: The user's current password
+        - new_password: The desired new password
+        - confirm_password: Confirmation of the new password
+    user_and_type : tuple
+        A tuple containing the user document and user type (admin/employee),
+        obtained from the get_current_user dependency
     Returns:
-        dict: A message confirming successful password change
+    -------
+    dict
+        A dictionary with a success message indicating the password was changed
     Raises:
-        HTTPException: 400 status code if new password and confirm password do not match
-    Example:
-        result = await change_password(passwords, user_and_type)
+    ------
+    HTTPException
+        - 400: If the current password is invalid
+        - 400: If the new password and confirm password do not match
+    Notes:
+    -----
+    The function handles both admin and employee password changes by checking
+    the user_type and updating the appropriate collection.
     """
-          
+   
     user, user_type = user_and_type
+
+    if user_type == "admin":
+        user = await admins_collection.find_one({"email": user["email"]})
+        if not verify_password(plain_password=passwords.current_password, hashed_password=user["password"]):
+            raise HTTPException(status_code=400, detail="Invalid current password")
+        
+    else:
+        user = await employees_collection.find_one({"email": user["email"]})
+        if not verify_password(plain_password=passwords.current_password, hashed_password=user["password"]):
+            raise HTTPException(status_code=400, detail="Invalid current password")
 
     new_password = passwords.new_password
     confirm_password = passwords.confirm_password
@@ -262,12 +284,12 @@ async def change_password(passwords: PasswordReset = Body(...), user_and_type: t
     
     if user_type == "admin":
         await admins_collection.update_one(
-            {"email": user},
+            {"email": user["email"]},
             {"$set": {"password": hashed_password}}
         )
     else:
         await employees_collection.update_one(
-            {"email": user},
+            {"email": user["email"]},
             {"$set": {"password": hashed_password}}
         )   
 

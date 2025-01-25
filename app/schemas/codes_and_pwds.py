@@ -29,3 +29,18 @@ class PasswordReset(BaseModel):
         if "new_password" in info.data and confirm_password != info.data["new_password"]:
             raise ValueError("Passwords do not match")
         return confirm_password
+    
+
+class ChangePassword(PasswordReset):
+    current_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=100,
+        description="Current password"
+    )
+
+    @field_validator("current_password")
+    def validate_old_password(cls, current_password):
+        if len(current_password.strip()) == 0:
+            raise ValueError("Current password is required")
+        return current_password
