@@ -62,33 +62,12 @@ logging.basicConfig(
 def index():
     return {"message": "Hello Proxima"}
 
-def ping_server(url):
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        logging.info(f"pinged {url} successfully.")
-
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error pinging {url}: {e}")
-
-def main_ping():
-    url = "https://proximahr.onrender.com"
-    ping_interval = 600
-
-    while True:
-        ping_server(url)
-        time.sleep(ping_interval)
-
 
 if __name__ == "__main__":
     # Start cron job scheduler
     scheduler.start()
 
-    # Start the pinging function in a separate thread
     if PROD_MODE == True:
-        ping_thread = threading.Thread(target=main_ping, daemon=True)
-        ping_thread.start()
-
     # Run Uvicorn without reload in production
         uvicorn.run("main:app", host="0.0.0.0", port=11000, reload=False)
 
