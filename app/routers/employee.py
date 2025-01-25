@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, File, HTTPException, Depends, Request, UploadFile
+from typing import Optional
+from fastapi import APIRouter, File, HTTPException, Depends, Request, UploadFile, status
 from db import employees_collection, leaves_collection, admins_collection
 from models.employees import Employee
 from models.leaves import Leave
@@ -189,3 +190,114 @@ async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(g
     
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Image file not deleted.")
+
+
+@router.get("/profile")
+async def get_employee_profile(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieves the profile information of the currently authenticated employee.
+    Parameters:
+    ----------
+    user_and_type : tuple
+        A tuple containing user information and user type, obtained from the authentication dependency.
+    Returns:
+    -------
+    dict
+        A dictionary containing the serialized employee data with sensitive fields excluded.
+    Raises:
+    ------
+    HTTPException
+        404 if the employee is not found in the database.
+    """
+
+    user, user_type = user_and_type
+    employee_id = user["employee_id"]
+    company_id = user["company_id"] 
+    
+    # Fetch employee from database
+    employee = await employees_collection.find_one(
+        {"employee_id": employee_id, "company_id": company_id}
+    )
+    if not employee:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, 
+            detail="Employee not found."
+        )
+    
+    # Convert ObjectId to string if present
+    if "_id" in employee:
+        employee["_id"] = str(employee["_id"])
+
+    if "current_year" in employee and isinstance(employee["current_year"], int):
+        employee["current_year"] = str(employee["current_year"])
+    
+    # Create Employee instance and exclude sensitive fields
+    serialized_employee = Employee(**employee).model_dump(
+        exclude={
+            "company_id",
+            "password",
+            "date_created",
+            "_id",
+            "gender",
+            "country",
+            "attendance",
+            "position",
+            "employment_status",
+            "current_year",
+            "payment_frequency",
+            "used_leave_days",
+            "carried_over_days",
+            "account_name",
+            "account_number",
+            "bank_name",
+            "payment_status",
+        }
+    )
+
+    return {"data": serialized_employee}
+
+    
+@router.put("/update-profile") 
+async def update_employee_profile(
+    emergency_contact: Optional[dict] = None,
+    email: Optional[str] = None,
+    user_and_type: tuple = Depends(get_current_user)
+    ):
+    """
+    Updates the employee profile with emergency contact and email information if provided.
+    Args:
+        emergency_contact (dict, optional): Emergency contact information.
+        email (str, optional): Employee email address.
+        user_and_type (tuple): Tuple containing user information and type from authentication.
+    Returns:
+        dict: A message confirming successful profile update.
+    Raises:
+        HTTPException: 404 if employee not found, 400 if update fails.
+    """
+    
+    user, user_type = user_and_type
+    employee_id = user["employee_id"]
+    company_id = user["company_id"]
+    
+    employee = await employees_collection.find_one(
+        {"employee_id": employee_id, "company_id": company_id}
+    )   
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    update_fields = {}
+    if emergency_contact is not None:
+        update_fields["emergency_contact"] = emergency_contact
+    if email is not None:
+        update_fields["email"] = email
+    if not update_fields:
+        return {"message": "No fields to update"}
+    
+    result = await employees_collection.update_one(
+        {"employee_id": employee_id, "company_id": company_id},
+        {"$set": update_fields}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Profile update failed")
+   
+    return {"message": "Profile updated successfully"}

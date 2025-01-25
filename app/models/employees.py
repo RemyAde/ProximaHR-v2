@@ -54,4 +54,5 @@ class Employee(BaseModel):
     current_year: str = current_year
     position: str = "member"
     employment_status: str = "active" # or inactive or suspended
+    emergency_contact: Optional[Dict[str, str]] = None
     date_created: datetime = current_datetime
