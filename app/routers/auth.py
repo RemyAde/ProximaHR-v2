@@ -87,15 +87,13 @@ async def register_company(company: CompanyCreate, background_tasks: BackgroundT
 
 
 @router.post("/login", response_model=Token)
-async def login_for_access_token(user_type: str, company_id: str = Query(...), form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """
     Get an access token for a user.
     This function handles the login of a user by:
     1. Authenticating the user with the provided username and password
     2. Creating an access token for the user
     Args:
-        user_type (str): The type of user (admin or employee)
-        company_id (str): The
         form_data (OAuth2PasswordRequestForm): Pydantic model containing username and password
     Returns:
         dict: A dictionary containing:
@@ -106,7 +104,7 @@ async def login_for_access_token(user_type: str, company_id: str = Query(...), f
     Example:
         result = await login_for_access_token("admin", "12345", form_data)
     """
-    user = await authenticate_user(company_id=company_id, pk=form_data.username, password=form_data.password, user_type=user_type)
+    user = await authenticate_user(pk=form_data.username, password=form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -116,7 +114,7 @@ async def login_for_access_token(user_type: str, company_id: str = Query(...), f
 
     expiry_time = timedelta(days=1)
     
-    token = create_access_token(payload={"sub": form_data.username, "user_type": user_type, "company_id": user["company_id"]}, expiry=expiry_time)
+    token = create_access_token(payload={"sub": user["email"]}, expiry= expiry_time)
     
     return {"access_token": token, "token_type": "bearer"}
 

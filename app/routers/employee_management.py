@@ -104,6 +104,7 @@ async def list_employees(
                 "company_id": employee.get("company_id", ""),
                 "profile_image": employee.get("profile_image", ""),
                 "employee_id": employee["employee_id"],
+                "email": employee.get("email", ""),
                 "name": f"{employee['first_name']} {employee['last_name']}",
                 "job_title": employee.get("job_title", ""),
                 "department": employee.get("department", ""),

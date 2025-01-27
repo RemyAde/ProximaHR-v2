@@ -68,27 +68,22 @@ def create_access_token(payload: Dict[str, Any], expiry: timedelta):
     return encoded_data
 
 
-async def authenticate_user(company_id: str, pk: str, password: str, user_type: str):
+async def authenticate_user(pk: str, password: str):
     """
     authenticates user
     args:-
-        - pk: primary key (email for admin or employee_id for employees)
-        - user_type: admin or employee
+        - pk: primary key (email for admin and for employees)
+        - password: password
     """
-    company = await companies_collection.find_one({"registration_number": company_id})
-    if not company:
-        raise HTTPException(status_code=400, detail="Company not found")
-
-    if user_type == "admin":
-        user =  await admins_collection.find_one({"company_id": company_id, "email": pk})
+    is_valid_email = "@" in pk and "." in pk
+    if not is_valid_email:
+        return False
+    
+    user = await admins_collection.find_one({"email": pk})
+    if not user:
+        user = await employees_collection.find_one({"email": pk})
         if not user:
             return False
-    if user_type == "employee":
-        user = await employees_collection.find_one({"company_id": company_id, "employee_id": pk})
-        if not user:
-            return False
-    # else:
-    #     raise HTTPException(status_code=400, detail="Invalid user input")
     
     hashed_password = user["password"]
     if not verify_password(plain_password=password, hashed_password=hashed_password):
@@ -106,22 +101,20 @@ async def get_current_user(token: str = Depends(oauth2_bearer)) -> tuple:
             raise HTTPException(status_code=401, detail="Invalid token data.")
         
         pk: str = data.get("sub")
-        user_type: str = data.get("user_type")
-        company_id: str = data.get("company_id")
 
-        if pk is None or user_type is None:
+        if pk is None:
             print("Invalid user")
             raise HTTPException(status_code=401, detail="Could not validate user.")
         
-        if user_type == "admin":
-            user = await admins_collection.find_one({"company_id": company_id, "email": pk})
+        user = await admins_collection.find_one({"email": pk})
+        user_type = "admin"
+        
+        if not user:
+            user = await employees_collection.find_one({"email": pk})
+            user_type = "employee"
+        
             if not user:
-                raise HTTPException(status_code=401, detail="Admin not found.")
-            
-        elif user_type == "employee":
-            user = await employees_collection.find_one({"company_id": company_id, "employee_id": pk})
-            if not user:
-                raise HTTPException(status_code=401, detail="Employee not found.")
+                raise HTTPException(status_code=401, detail="User not found.")
         
         return user, user_type
     
