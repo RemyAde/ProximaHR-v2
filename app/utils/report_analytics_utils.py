@@ -542,3 +542,36 @@ async def calculate_attendance_for_department(month: int, year: int, company_id:
             current_date += timedelta(days=1)
 
     return department_summary
+
+
+async def calculate_average_working_hours(company_id: str, timer_logs_collection) -> float:
+    """Calculate average working hours from timer logs for current month."""
+    try:
+        current_date = datetime.now(UTC)
+        start_of_month = datetime(current_date.year, current_date.month, 1, tzinfo=UTC)
+        
+        pipeline = [
+            {
+                "$match": {
+                    "company_id": company_id,
+                    "date": {
+                        "$gte": start_of_month,
+                        "$lte": current_date
+                    }
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "avg_hours": {
+                        "$avg": "$total_hours"
+                    }
+                }
+            }
+        ]
+        
+        result = await timer_logs_collection.aggregate(pipeline).to_list(length=1)
+        return result[0]["avg_hours"] if result else 0.0
+        
+    except Exception:
+        return 0.0
