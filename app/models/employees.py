@@ -51,7 +51,7 @@ class Employee(BaseModel):
     annual_leave_days: Optional[int] = 0
     used_leave_days: Optional[int] = 0
     carried_over_days: Optional[int] = 0
-    current_year: str = current_year
+    current_year: int = current_year
     position: str = "member"
     employment_status: str = "active" # or inactive or suspended
     emergency_contact: Optional[Dict[str, str]] = None
