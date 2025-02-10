@@ -370,9 +370,9 @@ async def payroll_overview(company_id: str, user_and_type: tuple = Depends(get_c
 @router.get("/events")
 async def get_events(company_id: str, user_and_type: tuple = Depends(get_current_user)):
     """
-    Retrieves upcoming birthdays and work anniversaries for employees in a specific company.
+    Retrieves upcoming birthdays and work anniversaries for employees in a given company.
     This async function fetches events (birthdays and work anniversaries) occurring in the next 30 days
-    for active employees in the specified company. Only admin users can access this data.
+    for active employees of a specified company. Only admin users can access this information.
     Args:
         company_id (str): The registration number of the company
         user_and_type (tuple): A tuple containing user information and user type, obtained from get_current_user dependency
@@ -384,14 +384,15 @@ async def get_events(company_id: str, user_and_type: tuple = Depends(get_current
             - anniversaries (list): List of employees with upcoming work anniversaries
             - total_event_count (int): Total number of upcoming events
     Raises:
-        HTTPException: If user is not authorized or if any other error occurs during execution
-        get_user_exception: If user is not an admin or doesn't belong to the specified company
-    Each employee in the birthdays and anniversaries lists contains:
-        - first_name (str)
-        - last_name (str)
-        - date_of_birth (datetime) [for birthdays]
-        - employment_date (datetime) [for anniversaries]
-        - this_year_birthday/this_year_anniversary (datetime)
+        HTTPException: 
+            - 400: If company_id is invalid or if any other error occurs during execution
+            - 401: If user is not authorized (not an admin or doesn't belong to the company)
+    Each birthday and anniversary entry in the returned lists contains:
+        - _id (str): Employee ID
+        - first_name (str): Employee's first name
+        - last_name (str): Employee's last name
+        - date_of_birth/employment_date (str): Original date in ISO format
+        - this_year_birthday/this_year_anniversary (str): This year's date in ISO format
     """
 
     user, user_type = user_and_type
@@ -407,6 +408,10 @@ async def get_events(company_id: str, user_and_type: tuple = Depends(get_current
             "anniversaries": [],
             "total_event_count": 0
         }
+
+        # Validate and sanitize company_id
+        if not company_id.isalnum():
+            raise HTTPException(status_code=400, detail="Invalid company ID")
 
         company = await companies_collection.find_one({"registration_number": company_id})
         if not company:
@@ -495,6 +500,23 @@ async def get_events(company_id: str, user_and_type: tuple = Depends(get_current
             anniversaries = await employees_collection.aggregate(anniversary_pipeline).to_list(None)
         except Exception:
             anniversaries = []
+
+        # Convert ObjectId and datetime fields to string
+        for birthday in birthdays:
+            if "_id" in birthday:
+                birthday["_id"] = str(birthday["_id"])
+            if "date_of_birth" in birthday:
+                birthday["date_of_birth"] = birthday["date_of_birth"].isoformat()
+            if "this_year_birthday" in birthday:
+                birthday["this_year_birthday"] = birthday["this_year_birthday"].isoformat()
+
+        for anniversary in anniversaries:
+            if "_id" in anniversary:
+                anniversary["_id"] = str(anniversary["_id"])
+            if "employment_date" in anniversary:
+                anniversary["employment_date"] = anniversary["employment_date"].isoformat()
+            if "this_year_anniversary" in anniversary:
+                anniversary["this_year_anniversary"] = anniversary["this_year_anniversary"].isoformat()
 
         data.update({
             "birthday_count": len(birthdays),
