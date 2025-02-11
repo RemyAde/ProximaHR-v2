@@ -12,7 +12,9 @@ router = APIRouter()
 
 
 @router.get("/")
-async def list_departments(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def list_departments(company_id: str, 
+                           department_name: str = Query(None, description="search department by name"), 
+                           user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieve a list of all departments for a given company.
     This async function fetches all departments belonging to a company, including details about
@@ -49,7 +51,10 @@ async def list_departments(company_id: str, user_and_type: tuple = Depends(get_c
             raise get_user_exception()
         
         data = []
-        departments = await departments_collection.find({"company_id": company_id}).sort("name", ASCENDING).to_list(length=None)
+        query_filter = {"company_id": company_id}
+        if department_name:
+            query_filter["name"] = {"$regex": f"^{department_name}", "$options": "i"}
+        departments = await departments_collection.find(query_filter).sort("name", ASCENDING).to_list(length=None)
 
         for department in departments:
 
