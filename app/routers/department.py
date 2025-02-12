@@ -1,3 +1,4 @@
+from typing import Optional
 from pymongo import ASCENDING
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
@@ -13,7 +14,7 @@ router = APIRouter()
 
 @router.get("/")
 async def list_departments(company_id: str, 
-                           department_name: str = Query(None, description="search department by name"), 
+                           department_name: Optional[str] = Query(None, description="Search department by name"), 
                            user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieve a list of all departments for a given company.
