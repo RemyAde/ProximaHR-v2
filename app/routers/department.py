@@ -185,10 +185,11 @@ async def create_department(
         )
 
 
-@router.get("/department-details")
+@router.get("/{department_id}/department-details")
 async def get_department_details(
     company_id: str,
-    department_name: str = Query(..., description="Name of the department to fetch details for."),
+    department_id: str = Path(..., description="ID of the department to fetch details for."),
+    # department_name: str = Query(..., description="Name of the department to fetch details for."),
     user_and_type: tuple = Depends(get_current_user),
 ):
     """
@@ -201,49 +202,45 @@ async def get_department_details(
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Unauthorized user!")
 
-    # Check if the company exists
-    company_filter = {"registration_number": company_id}
-    company = await companies_collection.find_one(company_filter)
-    if not company:
-        raise HTTPException(status_code=404, detail="Company not found.")
-
-    if company.get("registration_number") != user.get("company_id"):
+    if company_id != user.get("company_id"):
         raise HTTPException(status_code=403, detail="Unauthorized to access this company.")
+    
+    try:
+        # Check if the department exists
+        # department_filter = {"name": {"$regex": f"^{department_name}$", "$options": "i"}, "company_id": company_id}
+        department = await departments_collection.find_one({"_id": ObjectId(department_id)})
+        if not department:
+            raise HTTPException(status_code=404, detail="Department not found.")
 
-    # Check if the department exists
-    department_filter = {"name": {"$regex": f"^{department_name}$", "$options": "i"}, "company_id": company_id}
-    department = await departments_collection.find_one(department_filter)
-    if not department:
-        raise HTTPException(status_code=404, detail="Department not found.")
+        # Get department head details if `hod` field is provided
+        hod_details = None
+        if department.get("hod"):
+            hod_filter = {"employee_id": department["hod"], "company_id": company_id}
+            hod = await employees_collection.find_one(hod_filter)
+            if hod:
+                hod_details = {
+                    "first_name": hod.get("first_name", ""),
+                    "last_name": hod.get("last_name", ""),
+                    "email": hod.get("email", ""),
+                    "phone_number": hod.get("phone_number", ""),
+                    "work_location": hod.get("work_location", ""),
+                }
 
-    # Get department head details if `hod` field is provided
-    hod_details = None
-    if department.get("hod"):
-        hod_filter = {"employee_id": department["hod"], "company_id": company_id}
-        hod = await employees_collection.find_one(hod_filter)
-        if hod:
-            hod_details = {
-                "first_name": hod.get("first_name", ""),
-                "last_name": hod.get("last_name", ""),
-                "email": hod.get("email", ""),
-                "phone_number": hod.get("phone_number", ""),
-                "work_location": hod.get("work_location", ""),
-            }
+        # Convert ObjectId to string
+        department_id = str(department["_id"]) if "_id" in department else None
 
-    # consumer here hits list employees endpoint and query on department to get employee list
+        # Build and return the department details
+        department_details = {
+            "department_id": department_id,
+            "department_name": department.get("name", ""),
+            "description": department.get("description", ""),
+            "hod_details": hod_details,  # None if no valid HOD exists
+        }
 
-    # Convert ObjectId to string
-    department_id = str(department["_id"]) if "_id" in department else None
-
-    # Build and return the department details
-    department_details = {
-        "department_id": department_id,
-        "department_name": department.get("name", ""),
-        "description": department.get("description", ""),
-        "hod_details": hod_details,  # None if no valid HOD exists
-    }
-
-    return {"message": "Department details fetched successfully.", "data": department_details}
+        return {"message": "Department details fetched successfully.", "data": department_details}
+    
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"An error occurred: {str(e)}")
 
 
 @router.put("/{department_id}/edit-department")
