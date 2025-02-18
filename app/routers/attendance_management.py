@@ -5,7 +5,7 @@ from pytz import UTC
 from db import leaves_collection, timer_logs_collection, employees_collection
 from utils.app_utils import get_current_user
 from utils.report_analytics_utils import calculate_attendance_trend
-from utils.attendance_utils import calculate_department_metrics, calculate_company_metrics
+from utils.attendance_utils import calculate_department_metrics, calculate_company_metrics, list_employee_attendance_records
 
 router = APIRouter()
 
@@ -283,3 +283,59 @@ async def get_company_overview(
 
     company_metrics = await calculate_company_metrics(company_id, month, current_year)
     return {"company_metrics": company_metrics}
+
+
+@router.get("/employees-attendance")
+async def get_employees_attendance(
+    month: int = Query(
+        default=datetime.now(UTC).month,
+        ge=1,
+        le=12,
+        description="Month (1-12), defaults to current month"
+    ),
+    department: str = Query(
+        default=None,
+        description="Department name to filter results"
+    ),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Retrieve attendance records for all employees in a company.
+    This endpoint requires admin privileges and returns attendance records for all employees
+    in the company for the specified month, optionally filtered by department.
+    Args:
+        month (int): Month number (1-12)
+        department (str, optional): Department name to filter results
+        user_and_type (tuple): A tuple containing user information and user type
+    Returns:
+        dict: A dictionary containing:
+            - employee_attendance (list): A list of dictionaries containing:
+                - employee_id (str): The unique identifier for the employee
+                - employee_name (str): The name of the employee
+                - department (str): The department the employee belongs to
+                - attendance_summary (list): Daily attendance records with the following fields:
+                    - date (date): The date of the record
+                    - attendance_status (str): One of 'present', 'absent', 'undertime', or 'on_leave'
+                    - hours_worked (float): Number of hours worked, rounded to 2 decimal places
+                    - overtime (int): 1 if overtime was worked, 0 otherwise
+                    - undertime (int): 1 if undertime was recorded, 0 otherwise
+                    - absent (int): 1 if marked as absent, 0 otherwise
+                - totals (dict): Summary counts including:
+                    - leave_days (int): Total number of approved leave days
+                    - absences (int): Total number of absences
+                    - undertimes (int): Total number of undertime days
+                    - presents (int): Total number of present days
+    Raises:
+        HTTPException:
+            - 403: If user is not an admin
+    """
+    user, user_type = user_and_type
+
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    
+    company_id = user["company_id"]
+    current_year = datetime.now(UTC).year
+
+    employees_attendance = await list_employee_attendance_records(company_id, month, current_year, department.lower() if department else None)
+    return {"employee_attendance": employees_attendance}
