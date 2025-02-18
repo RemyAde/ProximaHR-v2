@@ -5,7 +5,7 @@ from pytz import UTC
 from db import leaves_collection, timer_logs_collection, employees_collection
 from utils.app_utils import get_current_user
 from utils.report_analytics_utils import calculate_attendance_trend
-from utils.attendance_utils import calculate_department_metrics
+from utils.attendance_utils import calculate_department_metrics, calculate_company_metrics
 
 router = APIRouter()
 
@@ -249,3 +249,37 @@ async def get_department_overview(
         return {"department_metrics": filtered_metrics}
 
     return {"department_metrics": department_metrics}
+
+
+@router.get("/company-overview")
+async def get_company_overview(
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Retrieve attendance metrics for a company.
+    This endpoint requires admin privileges and returns the attendance rate
+    for the specified month.
+    Returns:
+        dict: A dictionary containing:
+            - company_metrics (dict): A dictionary containing:
+                - attendance_rate (float): The attendance rate for the month
+                - total_overtime_hours (float): Total overtime hours for the month
+                - total_undertime_hours (float): Total undertime hours for the month
+                - total_absences (int): Total absences for the month
+                - total_hours_logged (float): Total hours logged for the month
+    Raises:
+        HTTPException:
+            - 403: If user is not an admin
+    """
+    user, user_type = user_and_type
+
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    
+    company_id = user["company_id"]
+    today = datetime.now(UTC)
+    current_year = today.year
+    month = today.month
+
+    company_metrics = await calculate_company_metrics(company_id, month, current_year)
+    return {"company_metrics": company_metrics}

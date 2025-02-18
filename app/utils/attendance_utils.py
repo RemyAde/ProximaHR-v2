@@ -119,3 +119,33 @@ async def calculate_department_metrics(company_id: str, month: int, year: int):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def calculate_company_metrics(company_id: str, month: int, year: int):
+    """Calculate average attendance rate, total hours logged, total overtime hours, and total undertime hours for the company."""
+    try:
+        department_metrics = await calculate_department_metrics(company_id, month, year)
+        
+        total_departments = len(department_metrics)
+        total_attendance_rate = 0
+        total_hours_logged = 0
+        total_overtime_hours = 0
+        total_undertime_hours = 0
+
+        for metrics in department_metrics.values():
+            total_attendance_rate += metrics["attendance_rate"]
+            total_hours_logged += metrics["total_hours_logged"]
+            total_overtime_hours += metrics["overtime_hours"]
+            total_undertime_hours += metrics["undertime_hours"]
+
+        average_attendance_rate = total_attendance_rate / total_departments if total_departments > 0 else 0
+
+        return {
+            "average_attendance_rate": average_attendance_rate,
+            "total_hours_logged": total_hours_logged,
+            "total_overtime_hours": total_overtime_hours,
+            "total_undertime_hours": total_undertime_hours
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
