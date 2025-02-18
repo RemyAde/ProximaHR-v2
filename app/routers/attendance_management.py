@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends, Path
+from fastapi import APIRouter, HTTPException, Depends, Path, Query
 from pytz import UTC
 from db import leaves_collection, timer_logs_collection, employees_collection
 from utils.app_utils import get_current_user
 from utils.report_analytics_utils import calculate_attendance_trend
+from utils.attendance_utils import calculate_department_metrics
 
 router = APIRouter()
 
@@ -194,3 +195,57 @@ async def get_metrics(user_and_type: tuple = Depends(get_current_user)):
     attendance_rate = await calculate_attendance_trend(company_id=company_id, employees_collection=employees_collection, 
                                                        timer_logs_collection=timer_logs_collection)
     return  {"attendance_rate": attendance_rate["current_month_attendance_rate"]}
+
+
+@router.get("/departments-overview")
+async def get_department_overview(
+    month: int = Query(
+        default=datetime.now(UTC).month,
+        ge=1,
+        le=12,
+        description="Month (1-12), defaults to current month"
+    ),
+    department: str = Query(
+        default=None,
+        description="Department name to filter results"
+    ),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Retrieve attendance metrics for departments in a company.
+    This endpoint requires admin privileges and returns the attendance rate
+    for specified month, optionally filtered by department.
+    Args:
+        month (int): Month number (1-12)
+        department (str, optional): Department name to filter results
+        user_and_type (tuple): A tuple containing user information and user type
+    Returns:
+        dict: A dictionary containing:
+            - department_metrics (list): A list of dictionaries containing:
+                - department (str): The name of the department
+                - attendance_rate (float): The attendance rate for the month
+    Raises:
+        HTTPException:
+            - 403: If user is not an admin
+            - 404: If specified department is not found
+    """
+    user, user_type = user_and_type
+
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    
+    company_id = user["company_id"]
+    current_year = datetime.now(UTC).year
+
+    department_metrics = await calculate_department_metrics(company_id, month, current_year)
+    
+    if department:
+        filtered_metrics = {dept: metrics for dept, metrics in department_metrics.items() if dept.lower() == department.lower()}
+        if not filtered_metrics:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Department '{department}' not found"
+            )
+        return {"department_metrics": filtered_metrics}
+
+    return {"department_metrics": department_metrics}
