@@ -5,14 +5,14 @@ from pytz import UTC
 from db import leaves_collection, timer_logs_collection, employees_collection
 from utils.app_utils import get_current_user
 from utils.report_analytics_utils import calculate_attendance_trend
-from utils.attendance_utils import calculate_department_metrics, calculate_company_metrics, list_employee_attendance_records
+from utils.attendance_utils import calculate_department_metrics, calculate_company_metrics, calculate_employee_metrics, get_monthly_attendance_with_times, list_employee_attendance_records
 
 router = APIRouter()
 
 
 @router.get("/attendance")
 async def get_monthly_attendance_record(
-    employee_id :str = Path(..., description="Employee ID"),
+    employee_id :str = Query(..., description="Employee ID"),
     user_and_type: tuple = Depends(get_current_user)
 ):
     """Retrieves and generates a monthly attendance record for a specific employee.
@@ -339,3 +339,35 @@ async def get_employees_attendance(
 
     employees_attendance = await list_employee_attendance_records(company_id, month, current_year, department.lower() if department else None)
     return {"employee_attendance": employees_attendance}
+
+
+@router.get("/employee-attendance")
+async def get_employee_attendance_with_times(
+    employee_id: str = Query(..., description="Employee ID"),
+    month: int = Query(default=datetime.now(UTC).month, ge=1, le=12, description="Month (1-12), defaults to current month"),
+    year: int = Query(default=datetime.now(UTC).year, description="Year, defaults to current year"),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """Retrieve monthly attendance record with clock-in and clock-out times for a specific employee."""
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+
+    company_id = user["company_id"]
+    return await get_monthly_attendance_with_times(employee_id, company_id, month, year)
+
+
+@router.get("/employee-metrics")
+async def get_employee_metrics(
+    employee_id: str = Query(..., description="Employee ID"),
+    month: int = Query(default=datetime.now(UTC).month, ge=1, le=12, description="Month (1-12), defaults to current month"),
+    year: int = Query(default=datetime.now(UTC).year, description="Year, defaults to current year"),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """Retrieve attendance metrics for a specific employee."""
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+
+    company_id = user["company_id"]
+    return await calculate_employee_metrics(employee_id, company_id, month, year)

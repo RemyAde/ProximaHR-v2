@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from pytz import UTC
 
 from fastapi import HTTPException
-from db import employees_collection, timer_logs_collection
+from db import employees_collection, timer_logs_collection, leaves_collection
 
 
 def calculate_attendance_status(hours_worked: float, working_hours: float, is_leave_day: bool) -> str:
@@ -242,6 +242,143 @@ async def list_employee_attendance_records(company_id: str, month: int, year: in
             })
 
         return employee_records
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+async def get_monthly_attendance_with_times(employee_id: str, company_id: str, month: int, year: int):
+    """Retrieve monthly attendance record with clock-in and clock-out times for a specific employee."""
+    try:
+        start_date = datetime(year, month, 1, tzinfo=UTC)
+        end_date = datetime(year, month, monthrange(year, month)[1], tzinfo=UTC)
+
+        # Fetch approved leaves for the employee
+        leaves = await leaves_collection.find({
+            "company_id": company_id, 
+            "employee_id": employee_id,
+            "status": "approved",
+            "start_date": {"$lte": end_date},
+            "end_date": {"$gte": start_date}
+        }).to_list(length=None)
+
+        leave_dates = set()
+        for leave in leaves:
+            leave_start = leave["start_date"].date()
+            leave_end = leave["end_date"].date()
+            leave_dates.update((leave_start + timedelta(days=i)) for i in range((leave_end - leave_start).days + 1))
+
+        # Fetch attendance logs for the month
+        attendance_logs = await timer_logs_collection.find({
+            "company_id": company_id,
+            "employee_id": employee_id,
+            "date": {"$gte": start_date, "$lte": end_date}
+        }).to_list(length=None)
+
+        logs_by_date = {log["date"].date(): log for log in attendance_logs}
+
+        # Get working hours for the employee
+        employee = await employees_collection.find_one({"employee_id": employee_id})
+        working_hours = employee.get("working_hours", 8)
+
+        # Generate attendance records
+        summary = []
+        current_date = start_date
+        total_leave_days = 0
+        total_absences = 0
+        total_undertimes = 0
+        total_presents = 0
+
+        while current_date <= end_date:
+            current_day = current_date.date()
+            is_leave_day = current_day in leave_dates
+
+            # Determine attendance status
+            if is_leave_day:
+                attendance_status = "on_leave"
+                total_leave_days += 1
+                hours_worked = 0
+                overtime = 0
+                undertime = 0
+                absent = 0
+                clock_in = None
+                clock_out = None
+            else:
+                log = logs_by_date.get(current_day)
+                if log:
+                    start_time = log.get("start_time")
+                    end_time = log.get("end_time")
+                    hours_worked = (end_time - start_time).total_seconds() / 3600 if start_time and end_time else 0
+                    overtime = 1 if hours_worked > working_hours else 0
+                    undertime = 1 if working_hours > hours_worked >= 0.4 * working_hours else 0
+                    absent = 1 if hours_worked < 0.4 * working_hours else 0
+                    clock_in = start_time
+                    clock_out = end_time
+
+                    if hours_worked >= 0.9 * working_hours:
+                        attendance_status = "present"
+                        total_presents += 1
+                    elif undertime:
+                        attendance_status = "undertime"
+                        total_undertimes += 1
+                    elif absent:
+                        attendance_status = "absent"
+                        total_absences += 1
+                else:
+                    # No log means absent
+                    hours_worked = 0
+                    overtime = 0
+                    undertime = 0
+                    absent = 1
+                    attendance_status = "absent"
+                    total_absences += 1
+                    clock_in = None
+                    clock_out = None
+
+            # Add attendance record
+            summary.append({
+                "date": current_day,
+                "attendance_status": attendance_status,
+                "hours_worked": round(hours_worked, 2),
+                "overtime": overtime,
+                "undertime": undertime,
+                "absent": absent,
+                "clock_in": clock_in,
+                "clock_out": clock_out
+            })
+
+            current_date += timedelta(days=1)
+
+        # Return detailed attendance and summary counts
+        return {
+            "attendance_summary": summary,
+            "totals": {
+                "leave_days": total_leave_days,
+                "absences": total_absences,
+                "undertimes": total_undertimes,
+                "presents": total_presents,
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def calculate_employee_metrics(employee_id: str, company_id: str, month: int, year: int):
+    """Calculate attendance rate, total overtime hours, undertime hours, and total absences for an employee."""
+    try:
+        attendance_data = await get_monthly_attendance_with_times(employee_id, company_id, month, year)
+        totals = attendance_data["totals"]
+
+        total_working_days = totals["presents"] + totals["absences"] + totals["undertimes"]
+        attendance_rate = (totals["presents"] / total_working_days) * 100 if total_working_days > 0 else 0
+
+        return {
+            "attendance_rate": attendance_rate,
+            "total_overtime_hours": sum(record["hours_worked"] - 8 for record in attendance_data["attendance_summary"] if record["overtime"]),
+            "total_undertime_hours": sum(8 - record["hours_worked"] for record in attendance_data["attendance_summary"] if record["undertime"]),
+            "total_absences": totals["absences"]
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
