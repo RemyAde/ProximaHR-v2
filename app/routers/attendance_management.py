@@ -164,39 +164,6 @@ async def get_monthly_attendance_record(
     }
 
 
-@router.get("/metrics")
-async def get_metrics(user_and_type: tuple = Depends(get_current_user)):
-    """
-    Retrieve attendance metrics for a company.
-    This endpoint requires admin privileges and returns the current month's attendance rate
-    for all employees in the company.
-    Args:
-        user_and_type (tuple): A tuple containing user information and user type, obtained from
-            the dependency get_current_user.
-    Returns:
-        dict: A dictionary containing:
-            - attendance_rate (float): The attendance rate for the current month
-    Raises:
-        HTTPException:
-            - 403: If the user is not an admin
-    """
-    user, user_type = user_and_type
-
-    if user_type != "admin":
-        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
-    
-    company_id = user["company_id"]
-
-    today = datetime.now(UTC)
-    start_date = datetime(today.year, today.month, 1, tzinfo=UTC)
-    end_date = today
-
-    # Fetch
-    attendance_rate = await calculate_attendance_trend(company_id=company_id, employees_collection=employees_collection, 
-                                                       timer_logs_collection=timer_logs_collection)
-    return  {"attendance_rate": attendance_rate["current_month_attendance_rate"]}
-
-
 @router.get("/departments-overview")
 async def get_department_overview(
     month: int = Query(
