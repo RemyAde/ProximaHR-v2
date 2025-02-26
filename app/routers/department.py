@@ -185,11 +185,83 @@ async def create_department(
         )
 
 
+# @router.get("/{department_id}/department-details")
+# async def get_department_details(
+#     company_id: str,
+#     department_id: str = Path(..., description="ID of the department to fetch details for."),
+#     # department_name: str = Query(..., description="Name of the department to fetch details for."),
+#     user_and_type: tuple = Depends(get_current_user),
+# ):
+#     """
+#     Fetches detailed information about a department, including the department's details and 
+#     the head of department's details such as first name, last name, email, phone number, 
+#     and work location.
+#     """
+#     user, user_type = user_and_type
+
+#     if user_type != "admin":
+#         raise HTTPException(status_code=403, detail="Unauthorized user!")
+
+#     if company_id != user.get("company_id"):
+#         raise HTTPException(status_code=403, detail="Unauthorized to access this company.")
+    
+#     try:
+#         # Check if the department exists
+#         # department_filter = {"name": {"$regex": f"^{department_name}$", "$options": "i"}, "company_id": company_id}
+#         department = await departments_collection.find_one({"_id": ObjectId(department_id)})
+#         if not department:
+#             raise HTTPException(status_code=404, detail="Department not found.")
+
+#         # Get department head details if `hod` field is provided
+#         hod_details = None
+#         if department.get("hod"):
+#             hod_filter = {"employee_id": department["hod"], "company_id": company_id}
+#             hod = await employees_collection.find_one(hod_filter)
+#             if hod:
+#                 hod_details = {
+#                     "first_name": hod.get("first_name", ""),
+#                     "last_name": hod.get("last_name", ""),
+#                     "email": hod.get("email", ""),
+#                     "phone_number": hod.get("phone_number", ""),
+#                     "work_location": hod.get("work_location", ""),
+#                 }
+
+#         # Convert ObjectId to string
+#         department_id = str(department["_id"]) if "_id" in department else None
+
+#         # Build and return the department details
+#         department_details = {
+#             "department_id": department_id,
+#             "department_name": department.get("name", ""),
+#             "description": department.get("description", ""),
+#             "hod_details": hod_details,  # None if no valid HOD exists
+#         }
+
+#         department_employees = await employees_collection.find({"employee_id": {"$in": department.get("staffs", [])}}).to_list(None)
+#         department_details["staff_members"] = [
+#             {
+#                 "employee_id": employee.get("employee_id", ""),
+#                 "first_name": employee.get("first_name", ""),
+#                 "last_name": employee.get("last_name", ""),
+#                 "job_title": employee.get("job_title", ""),
+#                 "employment_status": employee.get("employment_status", ""),
+#                 "work_mode": employee.get("work_mode", ""),
+#                 "position": employee.get("position", ""),
+#             }
+#             for employee in department_employees
+#         ]
+
+
+#         return {"message": "Department details fetched successfully.", "data": department_details}
+    
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=f"An error occurred: {str(e)}")
+
 @router.get("/{department_id}/department-details")
 async def get_department_details(
     company_id: str,
     department_id: str = Path(..., description="ID of the department to fetch details for."),
-    # department_name: str = Query(..., description="Name of the department to fetch details for."),
+    q: Optional[str] = Query(None, description="Search across employee name, job title, employee ID, status, and work mode"),
     user_and_type: tuple = Depends(get_current_user),
 ):
     """
@@ -207,7 +279,6 @@ async def get_department_details(
     
     try:
         # Check if the department exists
-        # department_filter = {"name": {"$regex": f"^{department_name}$", "$options": "i"}, "company_id": company_id}
         department = await departments_collection.find_one({"_id": ObjectId(department_id)})
         if not department:
             raise HTTPException(status_code=404, detail="Department not found.")
@@ -229,13 +300,42 @@ async def get_department_details(
         # Convert ObjectId to string
         department_id = str(department["_id"]) if "_id" in department else None
 
-        # Build and return the department details
+        # Build the department details
         department_details = {
             "department_id": department_id,
             "department_name": department.get("name", ""),
             "description": department.get("description", ""),
             "hod_details": hod_details,  # None if no valid HOD exists
         }
+
+        # Build the query filter for employees
+        employee_query = {"employee_id": {"$in": department.get("staffs", [])}}
+        if q:
+            search_regex = {"$regex": q, "$options": "i"}
+            employee_query["$or"] = [
+                {"first_name": search_regex},
+                {"last_name": search_regex},
+                {"job_title": search_regex},
+                {"employee_id": search_regex},
+                {"employment_status": search_regex},
+                {"work_mode": search_regex}
+            ]
+
+        # Fetch department employees based on the query filter
+        department_employees = await employees_collection.find(employee_query).to_list(None)
+        department_details["staff_members"] = [
+            {
+                "employee_id": employee.get("employee_id", ""),
+                "first_name": employee.get("first_name", ""),
+                "last_name": employee.get("last_name", ""),
+                "profile_image": employee.get("profile_image", ""),
+                "job_title": employee.get("job_title", ""),
+                "employment_status": employee.get("employment_status", ""),
+                "work_mode": employee.get("work_mode", ""),
+                "position": employee.get("position", ""),
+            }
+            for employee in department_employees
+        ]
 
         return {"message": "Department details fetched successfully.", "data": department_details}
     
