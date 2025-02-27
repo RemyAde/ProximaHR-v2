@@ -1,11 +1,22 @@
 import os
 import secrets
 
-from fastapi import HTTPException, UploadFile, File
+from fastapi import HTTPException, UploadFile
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-EMPLOYEE_UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads", "employee")
-ADMIN_UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads", "admin")
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# EMPLOYEE_UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads", "employee")
+# ADMIN_UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads", "admin")
+
+# Get the absolute path of the 'app' directory
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  
+BASE_UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads")
+
+EMPLOYEE_UPLOAD_DIR = os.path.join(BASE_UPLOAD_DIR, "employee")
+ADMIN_UPLOAD_DIR = os.path.join(BASE_UPLOAD_DIR, "admin")
+
+# Ensure directories exist
+os.makedirs(EMPLOYEE_UPLOAD_DIR, exist_ok=True)
+os.makedirs(ADMIN_UPLOAD_DIR, exist_ok=True)
 
 
 def create_upload_directory(type: str):
@@ -25,10 +36,13 @@ def validate_file_extension(type: str, filename: str):
 
 async def save_file(file: UploadFile, type: str, filename: str):
     file_content = await file.read()
+
     if type == "employee":
         file_path = os.path.join(EMPLOYEE_UPLOAD_DIR, filename)
     elif type == "admin":
         file_path = os.path.join(ADMIN_UPLOAD_DIR, filename)
+    else:
+        raise HTTPException(status_code=400, detail="Invalid file type")
     
     with open(file_path, "wb") as document:
         document.write(file_content)
