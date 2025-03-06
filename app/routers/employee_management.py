@@ -83,7 +83,6 @@ async def list_employees(
         # Build the query filter dynamically
         query_filter = {
             "company_id": company_id,
-            "employment_status": {"$ne": "inactive"}  # Exclude users with employment_status as 'inactive'
         }
         
         if department_name:  # Add department filter if provided
