@@ -18,6 +18,7 @@ class EmailInput(BaseModel):
 class ExtendedAdmin(BaseModel):
     date_of_birth: Optional[date] = None  # Stored as BSON datetime in MongoDB (ISODate)
     gender: Optional[str] = None
+    phone_number: Optional[str] = None
     address: Optional[str] = None
 
     @field_validator('date_of_birth', mode='before')
