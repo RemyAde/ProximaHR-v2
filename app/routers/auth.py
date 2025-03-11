@@ -294,3 +294,13 @@ async def change_password(passwords: ChangePassword = Body(...), user_and_type: 
         )   
 
     return {"message": "Password changed successfully"}
+
+
+@router.post("/logout")
+async def logout(user: dict = Depends(get_current_user)):
+    """
+    Logout endpoint.
+    In a stateless JWT scenario, logout is handled on the client side by discarding the token.
+    This endpoint simply returns a success message.
+    """
+    return {"message": "Logged out successfully"}

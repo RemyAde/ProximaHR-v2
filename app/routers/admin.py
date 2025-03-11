@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from db import companies_collection, admins_collection
-from schemas.admin import CreateAdmin
+from schemas.admin import CreateAdmin, ExtendedAdmin
 # from schemas.employee import ImageUpload
 from models.admins import Admin
 from utils.app_utils import get_current_user, hash_password
 from utils.image_utils import create_media_file
+from datetime import datetime, date
 
 router = APIRouter()
 
@@ -19,7 +20,7 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str):
     3. Validates the admin creation code
     4. Checks if the company has reached its admin limit
     5. Creates and stores the new admin
-    6. Updates the company's admin list and staff size
+    6. Updates the company's admin list
     Args:
         admin_obj (CreateAdmin): The admin object containing admin details including:
             - email
@@ -42,15 +43,14 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str):
         raise HTTPException(status_code=400, detail="Company not found")
     
     existing_admin = await admins_collection.find_one({
-    "$or": [
-        {"company_id": company_id},
-        {"email": admin_obj.email}
+        "$or": [
+            {"company_id": company_id},
+            {"email": admin_obj.email}
         ]
-        })
+    })
     
     if existing_admin:
         raise HTTPException(status_code=400, detail="Admin already registered")
-    
     
     if company["admin_creation_code"] != admin_obj.admin_code:
         raise HTTPException(status_code=401, detail="Invalid admin creation code")
@@ -68,8 +68,7 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str):
 
     await companies_collection.update_one(
         {"registration_number": company_id},
-        {"$push": {"admins": admin_instance.email},
-         "$inc": {"staff_size": 1}}
+        {"$push": {"admins": admin_instance.email}}
     )
 
     return {"message": "Admin created successfully"}
@@ -146,3 +145,80 @@ async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(g
     
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Image file not deleted.")
+    
+
+@router.get("/profile")
+async def get_admin_profile(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+    """
+    Get the profile of the company admin.
+    This function retrieves the profile details of the company admin from the database.
+    The user must be authenticated and belong to the company they are trying to access.
+    Args:
+        company_id (str): The ID of the company whose admin profile should be retrieved
+        user_and_type (tuple): A tuple containing user information and type, obtained from authentication dependency
+    Returns:
+        dict: The profile details of the company admin without sensitive fields
+    Raises:
+        HTTPException: 
+            - 403 if user is not authorized (company_id mismatch or incorrect user type)
+            - 400 if profile details could not be retrieved
+    """
+    user, user_type = user_and_type
+
+    if company_id != user["company_id"]:
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    
+    admin = await admins_collection.find_one({"company_id": company_id})
+    if not admin:
+        raise HTTPException(status_code=400, detail="Profile details not found")
+    
+    # Exclude sensitive fields from the response
+    admin.pop("password", None)
+    admin.pop("date_created", None)
+    
+    # Convert ObjectId to string for JSON serialization
+    if "_id" in admin:
+        admin["_id"] = str(admin["_id"])
+    
+    return admin
+
+
+@router.put("/update-admin")
+async def update_admin(
+    admin_update: ExtendedAdmin, company_id: str, user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Updates the admin model with fields defined in the ExtendedAdmin schema.
+    The user must be authenticated and authorized as an admin for the specified company.
+    
+    Args:
+        admin_update (ExtendedAdmin): An object containing the fields to update.
+        company_id (str): The company identifier.
+        user_and_type (tuple): Tuple with the authenticated user and its type.
+    
+    Returns:
+        dict: A message confirming the successful update.
+    
+    Raises:
+        HTTPException: If the user is not authorized or if the update fails.
+    """
+    user, user_type = user_and_type
+    if company_id != user.get("company_id") or user_type != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to update admin profile")
+    update_data = admin_update.model_dump(exclude_unset=True)
+
+    dob = update_data.get("date_of_birth")
+    if dob and isinstance(dob, date):
+        # Convert date to datetime using midnight as time
+        update_data["date_of_birth"] = datetime.combine(dob, datetime.min.time())
+ 
+    result = await admins_collection.update_one(
+        {"company_id": company_id},
+        {"$set": update_data}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=400, detail="Update failed")
+    return {"message": "Admin profile updated successfully"}

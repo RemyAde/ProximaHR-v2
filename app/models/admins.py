@@ -14,3 +14,6 @@ class Admin(BaseModel):
     company_id: str
     role: str = "admin"
     date_created: datetime = datetime.now(UTC)
+    date_of_birth: Optional[datetime] = None
+    gender: Optional[str] = None
+    address: Optional[str] = None
