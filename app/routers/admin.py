@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from db import companies_collection, admins_collection, employees_collection, leaves_collection, departments_collection, system_activity_collection
+from db import companies_collection, admins_collection
 from schemas.admin import CreateAdmin, ExtendedAdmin
 # from schemas.employee import ImageUpload
 from models.admins import Admin
