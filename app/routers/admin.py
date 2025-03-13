@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from db import companies_collection, admins_collection
+from db import companies_collection, admins_collection, employees_collection, leaves_collection, departments_collection, system_activity_collection
 from schemas.admin import CreateAdmin, ExtendedAdmin
 # from schemas.employee import ImageUpload
 from models.admins import Admin
 from utils.app_utils import get_current_user, hash_password
 from utils.image_utils import create_media_file
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 router = APIRouter()
 
@@ -107,7 +107,7 @@ async def upload_profile_image(request: Request, company_id: str, image_file: Up
     result = await admins_collection.update_one(
         {"company_id": user["company_id"]}, 
         {"$set": 
-         {"profile_image": f"{request.base_url}static/uploads/employee/{media_token_name}"}}
+         {"profile_image": f"{request.base_url}static/uploads/admin/{media_token_name}"}}
         )
 
     if result.modified_count == 0:
