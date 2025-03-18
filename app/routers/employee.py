@@ -259,7 +259,7 @@ async def get_employee_profile(user_and_type: tuple = Depends(get_current_user))
     
 @router.put("/update-profile") 
 async def update_employee_profile(
-    emergency_contact: Optional[dict] = None,
+    emergency_contact: Optional[dict] = {},
     email: Optional[str] = None,
     user_and_type: tuple = Depends(get_current_user)
     ):
