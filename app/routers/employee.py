@@ -207,54 +207,58 @@ async def get_employee_profile(user_and_type: tuple = Depends(get_current_user))
     Raises:
     ------
     HTTPException
-        404 if the employee is not found in the database.
+        404 if the employee is not found in the database, or 500 if an unexpected error occurs.
     """
-
-    user, user_type = user_and_type
-    employee_id = user["employee_id"]
-    company_id = user["company_id"] 
+    try:
+        user, user_type = user_and_type
+        employee_id = user["employee_id"]
+        company_id = user["company_id"] 
     
-    # Fetch employee from database
-    employee = await employees_collection.find_one(
-        {"employee_id": employee_id, "company_id": company_id}
-    )
-    if not employee:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
-            detail="Employee not found."
+        # Fetch employee from the database
+        employee = await employees_collection.find_one(
+            {"employee_id": employee_id, "company_id": company_id}
+        )
+        if not employee:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, 
+                detail="Employee not found."
+            )
+        
+        # Convert ObjectId to string if present
+        if "_id" in employee:
+            employee["_id"] = str(employee["_id"])
+    
+        if "current_year" in employee and isinstance(employee["current_year"], int):
+            employee["current_year"] = str(employee["current_year"])
+        
+        # Create Employee instance and exclude sensitive fields
+        serialized_employee = Employee(**employee).model_dump(
+            exclude={
+                "company_id",
+                "password",
+                "date_created",
+                "_id",
+                "gender",
+                "country",
+                "attendance",
+                "position",
+                "employment_status",
+                "current_year",
+                "payment_frequency",
+                "used_leave_days",
+                "carried_over_days",
+                "account_name",
+                "account_number",
+                "bank_name",
+                "payment_status",
+            }
         )
     
-    # Convert ObjectId to string if present
-    if "_id" in employee:
-        employee["_id"] = str(employee["_id"])
-
-    if "current_year" in employee and isinstance(employee["current_year"], int):
-        employee["current_year"] = str(employee["current_year"])
-    
-    # Create Employee instance and exclude sensitive fields
-    serialized_employee = Employee(**employee).model_dump(
-        exclude={
-            "company_id",
-            "password",
-            "date_created",
-            "_id",
-            "gender",
-            "country",
-            "attendance",
-            "position",
-            "employment_status",
-            "current_year",
-            "payment_frequency",
-            "used_leave_days",
-            "carried_over_days",
-            "account_name",
-            "account_number",
-            "bank_name",
-            "payment_status",
-        }
-    )
-
-    return {"data": serialized_employee}
+        return {"data": serialized_employee}
+    except HTTPException as http_err:
+        raise http_err
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"An error occurred while fetching the employee profile - {str(err)}")
 
     
 @router.put("/update-profile") 
