@@ -31,6 +31,8 @@ async def start_timer(user_and_type: tuple = Depends(get_current_user)):
             - detail: Error message with the specific exception details
     """
     user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can start timers")
 
     try:
         now = datetime.now(UTC)
@@ -64,6 +66,8 @@ async def pause_timer(user_and_type: tuple = Depends(get_current_user)):
         - timer_logs_collection (MongoDB collection)
     """
     user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can pause timers")
 
     try:
         now = datetime.now(UTC)
@@ -103,6 +107,8 @@ async def resume_timer(user_and_type: tuple = Depends(get_current_user)):
     """
 
     user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can resume timers")
 
     try:
         now = datetime.now(UTC)
@@ -148,6 +154,8 @@ async def stop_timer(user_and_type: tuple = Depends(get_current_user)):
     """
 
     user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can stop timers")
 
     try:
         now = datetime.now(UTC)  # Offset-aware datetime
@@ -194,7 +202,9 @@ async def calculate_daily_attendance(
     Hit this endpoint when attendance timer has been stopped.
     """
     user, user_type = user_and_type
-
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
     try:
         today = datetime.now(UTC).date()
         today_start = datetime(today.year, today.month, today.day)  # Start of the day
@@ -234,36 +244,6 @@ async def calculate_daily_attendance(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"An exception occured - {e}")
 
-
-@router.get("/employee/monthly-attendance-percentage")
-async def calculate_monthly_attendance_percentage(month: int, year: int, user_and_type: tuple = Depends(get_current_user)):
-    """ 
-    Calculate the monthly attendance percentage for an employee.
-    """
-    user, user_type = user_and_type
-
-    try:
-        employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id"))})
-        if not employee:
-            raise HTTPException(status_code=404, detail="Employee not found")
-
-        weekly_workdays = employee.get("weekly_workdays", 0)
-        working_hours = employee.get("working_hours", 0)
-        ideal_hours = await get_ideal_monthly_hours(weekly_workdays=int(weekly_workdays), working_hours=int(working_hours), month=month, year=year)
-        actual_hours = employee.get("monthly_working_hours", 0) # fix bug - this isn't month sensitive
-        attendance_percentage = (actual_hours / ideal_hours) * 100
-
-        return {
-            "employee_id": str(user.get("employee_id")),
-            "month": month,
-            "year": year,
-            "attendance_percentage": attendance_percentage,
-            "ideal_hours": ideal_hours,
-            "actual_hours": actual_hours
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"An exception occured - {e}")
-
     
 @router.get("/employee/attendance-summary")
 async def get_monthly_attendance_record(user_and_type: tuple = Depends(get_current_user)):
@@ -291,6 +271,8 @@ async def get_monthly_attendance_record(user_and_type: tuple = Depends(get_curre
             - Absent: if worked < 40% of required hours
     """
     user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
 
     employee = await employees_collection.find_one({
         "_id": ObjectId(user.get("_id")),
@@ -438,6 +420,9 @@ async def endpoint_attendance_summary(
     Endpoint to return daily attendance summary for the current employee.
     """
     user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
     employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id"))})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -447,7 +432,7 @@ async def endpoint_attendance_summary(
 
 
 @router.get("/employee/attendance-totals", response_model=Dict)
-async def endpoint_attendance_totals(
+async def attendance_totals(
     year: int = Query(..., description="Year for the attendance report"),
     month: int = Query(..., description="Month for the attendance report"),
     user_and_type: tuple = Depends(get_current_user)
@@ -457,6 +442,9 @@ async def endpoint_attendance_totals(
     Totals include total present days, absent days, overtime hours, and undertime hours.
     """
     user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
     employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id"))})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -466,7 +454,7 @@ async def endpoint_attendance_totals(
 
 
 @router.get("/employee/monthly-stats", response_model=Dict)
-async def endpoint_employee_monthly_report(
+async def employee_monthly_stats(
     month: int = Query(..., description="Month for the report"),
     year: int = Query(..., description="Year for the report"),
     user_and_type: tuple = Depends(get_current_user)
@@ -479,6 +467,9 @@ async def endpoint_employee_monthly_report(
       - Total overtime hours for the month.
     """
     user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
     employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id")), "company_id": user.get("company_id")})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
