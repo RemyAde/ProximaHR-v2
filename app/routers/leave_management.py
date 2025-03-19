@@ -180,7 +180,7 @@ async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_curren
     # Update leave status
     await leaves_collection.update_one(
         {"_id": ObjectId(leave_id)},
-        {"$set": {"status": "approved"}}
+        {"$set": {"status": "approved", "edited_at": datetime.now(UTC)}}
     )
 
     # Prepare notification data
