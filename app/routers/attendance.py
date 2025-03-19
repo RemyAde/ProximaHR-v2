@@ -3,9 +3,10 @@ from typing import Dict, List
 from bson import ObjectId
 from pytz import UTC
 from fastapi import APIRouter, Depends, HTTPException, Query
-from db import employees_collection, timer_logs_collection
+from db import employees_collection, timer_logs_collection, leaves_collection
 from models.attendance import TimerLog
-from utils.attendance_utils import (calculate_attendance_status, get_ideal_monthly_hours)
+from utils.attendance_utils import (calculate_attendance_status, get_ideal_monthly_hours, 
+                                    get_attendance_summary_for_employee, calculate_attendance_totals)
 from utils.app_utils import get_current_user
 
 router = APIRouter()
@@ -262,93 +263,201 @@ async def calculate_monthly_attendance_percentage(month: int, year: int, user_an
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"An exception occured - {e}")
 
-
+    
 @router.get("/employee/attendance-summary")
-async def get_attendance_summary(
+async def get_monthly_attendance_record(user_and_type: tuple = Depends(get_current_user)):
+    """
+    This function fetches and analyzes attendance data for the employee within the current month,
+    including approved leaves, work hours, and various attendance statuses. It also returns the
+    attendance percentage for the month and the total overtime hours.
+    
+    Returns:
+        dict: A dictionary containing:
+            - totals (dict): Summary counts including:
+                - leave_days (int): Total number of approved leave days
+                - absences (int): Total number of absences
+                - undertimes (int): Total number of undertime days
+                - presents (int): Total number of present days
+            - attendance_percentage (float): The percentage of ideal hours met for the month
+            - total_overtime_hours (float): Aggregate overtime hours for the month
+    Raises:
+        HTTPException: 
+            - 400 if employee is not found in the company
+    Notes:
+        - An employee is considered:
+            - Present: if worked >= 90% of required hours
+            - Undertime: if worked between 40% and 90% of required hours
+            - Absent: if worked < 40% of required hours
+    """
+    user, user_type = user_and_type
+
+    employee = await employees_collection.find_one({
+        "_id": ObjectId(user.get("_id")),
+        "company_id": user.get("company_id")
+    })
+    if not employee:
+        raise HTTPException(status_code=400, detail="Employee record not found")
+    
+    today = datetime.now(UTC)
+    start_date = datetime(today.year, today.month, 1, tzinfo=UTC)
+    end_date = today
+
+    # Fetch approved leaves for the employee
+    leaves = await leaves_collection.find({
+        "company_id": employee["company_id"], 
+        "employee_id": employee.get("employee_id"),
+        "status": "approved",
+        "start_date": {"$lte": end_date},
+        "end_date": {"$gte": start_date}
+    }).to_list(length=None)
+
+    leave_dates = set()
+    for leave in leaves:
+        leave_start = leave["start_date"].date()
+        leave_end = leave["end_date"].date()
+        for i in range((leave_end - leave_start).days + 1):
+            leave_dates.add(leave_start + timedelta(days=i))
+
+    # Fetch attendance logs for the month
+    attendance_logs = await timer_logs_collection.find({
+        "company_id": employee["company_id"],
+        "employee_id": employee.get("employee_id"),
+        "date": {"$gte": start_date, "$lte": end_date}
+    }).to_list(length=None)
+
+    logs_by_date = {log["date"].date(): log for log in attendance_logs}
+
+    # Get working hours for the employee
+    working_hours = employee.get("working_hours", 8)
+
+    # Generate attendance records
+    summary = []
+    current_date = start_date
+    total_leave_days = 0
+    total_absences = 0
+    total_undertimes = 0
+    total_presents = 0
+
+    while current_date <= end_date:
+        current_day = current_date.date()
+        is_leave_day = current_day in leave_dates
+
+        if is_leave_day:
+            attendance_status = "on_leave"
+            total_leave_days += 1
+            hours_worked = 0
+            overtime_flag = 0
+            undertime_flag = 0
+            absent = 0
+        else:
+            log = logs_by_date.get(current_day)
+            if log:
+                start_time = log.get("start_time")
+                end_time = log.get("end_time")
+                if start_time and end_time:
+                    hours_worked = (end_time - start_time).total_seconds() / 3600
+                else:
+                    hours_worked = 0
+
+                if hours_worked > working_hours:
+                    overtime_flag = 1
+                else:
+                    overtime_flag = 0
+
+                undertime_flag = 1 if working_hours > hours_worked >= 0.4 * working_hours else 0
+                absent = 1 if hours_worked < 0.4 * working_hours else 0
+
+                if hours_worked >= 0.9 * working_hours:
+                    attendance_status = "present"
+                    total_presents += 1
+                elif undertime_flag:
+                    attendance_status = "undertime"
+                    total_undertimes += 1
+                elif absent:
+                    attendance_status = "absent"
+                    total_absences += 1
+                else:
+                    attendance_status = "absent"
+                    total_absences += 1
+            else:
+                hours_worked = 0
+                overtime_flag = 0
+                undertime_flag = 0
+                absent = 1
+                attendance_status = "absent"
+                total_absences += 1
+
+        summary.append({
+            "date": current_day,
+            "attendance_status": attendance_status,
+            "hours_worked": round(hours_worked, 2),
+            "overtime": overtime_flag,
+            "undertime": undertime_flag,
+            "absent": absent
+        })
+
+        current_date += timedelta(days=1)
+
+    # Calculate total actual hours and total overtime hours for the month
+    total_actual_hours = sum(record["hours_worked"] for record in summary)
+    total_overtime_hours = sum(max(0, record["hours_worked"] - working_hours) for record in summary)
+
+    # Calculate ideal hours using weekly_workdays and working_hours from employee record
+    weekly_workdays = int(employee.get("weekly_workdays", 5))
+    ideal_hours = await get_ideal_monthly_hours(
+        weekly_workdays=weekly_workdays, 
+        working_hours=int(working_hours), 
+        month=today.month, 
+        year=today.year
+    )
+    
+    attendance_percentage = (total_actual_hours / ideal_hours) * 100 if ideal_hours > 0 else 0
+
+    # Return detailed attendance and summary counts along with the attendance percentage and total overtime hours
+    return {
+        # "attendance_summary": summary,
+        "totals": {
+            "leave_days": total_leave_days,
+            "absences": total_absences,
+            "undertimes": total_undertimes,
+            "presents": total_presents,
+            "total_overtime_hours": round(total_overtime_hours, 2)
+        },
+        "attendance_percentage": round(attendance_percentage, 2),
+    }
+
+
+@router.get("/employee/attendance-tracking", response_model=List[Dict])
+async def endpoint_attendance_summary(
     year: int = Query(..., description="Year for the attendance report"),
     month: int = Query(..., description="Month for the attendance report"),
     user_and_type: tuple = Depends(get_current_user)
-) -> List[Dict]:
+):
     """
-    Generate weekly attendance report for an employee for a chosen month and year.
+    Endpoint to return daily attendance summary for the current employee.
     """
     user, user_type = user_and_type
-    try:
-        # Verify employee existence
-        employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id"))})
-        if not employee:
-            raise HTTPException(status_code=404, detail="Employee not found")
+    employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id"))})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    summary = await get_attendance_summary_for_employee(employee, month, year)
+    return summary
 
-        # Fetch working hours
-        working_hours = employee.get("working_hours")
-
-        # Initialize start and end dates for the month
-        start_date = datetime(year, month, 1, tzinfo=UTC)
-        end_date = (start_date + timedelta(days=31)).replace(day=1) - timedelta(days=1)
-
-        today = datetime.now(UTC)
-        today_date = today.date()  # Convert to a date object
-
-        # Adjust end_date for the current month
-        if year == today_date.year and month == today_date.month:
-            end_date = today
-
-        # Fetch attendance logs for the month
-        timer_logs = await timer_logs_collection.find({
-            "company_id": user.get("company_id"),
-            "employee_id": user.get("employee_id"),
-            "date": {"$gte": start_date, "$lte": end_date}
-        }).to_list(length=None)
-
-        # Organize logs by date for quick lookup
-        logs_by_date = {log["date"].date(): log for log in timer_logs}
-
-        # Generate weekly attendance summary
-        attendance_summary = []
-        current_date = start_date
-        
-        while current_date <= end_date:
-            # Check if current date is a weekday (Monday to Friday)
-            if current_date.weekday() < 5:  # 0-4 corresponds to Monday-Friday
-                log = logs_by_date.get(current_date.date())
-
-                # Calculate attendance details
-                start_time = log["start_time"] if log else None
-                end_time = log["end_time"] if log else None
-                hours_worked = log.get("total_hours", 0) if log else 0
-
-                # Determine overtime, undertime, and absence
-                if working_hours == 0:
-                    absent = 1 if hours_worked == 0 else 0
-                    attendance_summary.append({
-                        "date": current_date.date(),
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "hours_worked": round(hours_worked, 2),
-                        "overtime": 0,
-                        "undertime": 0,
-                        "absent": absent
-                    })
-                else:
-                    overtime = 1 if hours_worked > working_hours else 0
-                    undertime = 1 if hours_worked < working_hours and hours_worked >= 0.4 * working_hours else 0
-                    absent = 1 if hours_worked < 0.4 * working_hours else 0
-
-                    attendance_summary.append({
-                        "date": current_date.date(),
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "hours_worked": round(hours_worked, 2),
-                        "overtime": overtime,
-                        "undertime": undertime,
-                        "absent": absent
-                    })
-                    # save attendance summary to a model and store in db
-
-            # Move to the next day
-            current_date += timedelta(days=1)
-
-        return attendance_summary
-
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"An exception occurred - {e}")
+@router.get("/employee/attendance-totals", response_model=Dict)
+async def endpoint_attendance_totals(
+    year: int = Query(..., description="Year for the attendance report"),
+    month: int = Query(..., description="Month for the attendance report"),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Endpoint to return aggregated attendance totals for the current employee.
+    Totals include total present days, absent days, overtime hours, and undertime hours.
+    """
+    user, user_type = user_and_type
+    employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id"))})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    totals = await calculate_attendance_totals(employee, month, year)
+    return totals

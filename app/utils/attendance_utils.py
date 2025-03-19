@@ -1,5 +1,6 @@
 from calendar import monthrange
 from datetime import datetime, timedelta
+from typing import Dict, List
 from pytz import UTC
 
 from fastapi import HTTPException
@@ -382,3 +383,118 @@ async def calculate_employee_metrics(employee_id: str, company_id: str, month: i
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+async def get_attendance_summary_for_employee(employee: dict, month: int, year: int) -> List[Dict]:
+    """
+    Generates a daily attendance summary for an employee for the given month and year.
+    Each record will include: date, start_time, end_time, hours_worked, overtime, undertime, absent.
+    """
+    # Fetch working hours for the employee
+    working_hours = employee.get("working_hours", 8)
+    
+    # Initialize start and end dates for the month
+    start_date = datetime(year, month, 1, tzinfo=UTC)
+    end_date = (start_date + timedelta(days=31)).replace(day=1) - timedelta(days=1)
+    
+    # If current month, adjust end_date to now
+    today = datetime.now(UTC)
+    if year == today.year and month == today.month:
+        end_date = today
+    
+    # Fetch attendance logs for the month
+    timer_logs = await timer_logs_collection.find({
+        "company_id": employee["company_id"],
+        "employee_id": employee.get("employee_id"),
+        "date": {"$gte": start_date, "$lte": end_date}
+    }).to_list(length=None)
+    
+    # Organize logs by date for quick lookup
+    logs_by_date = { log["date"].date(): log for log in timer_logs }
+    
+    # Generate daily summary (only for weekdays as in your code)
+    summary = []
+    current_date = start_date
+    while current_date <= end_date:
+        # Optionally filter to weekdays (Monday to Friday)
+        if current_date.weekday() < 5:
+            log = logs_by_date.get(current_date.date())
+            if log:
+                start_time = log.get("start_time")
+                end_time = log.get("end_time")
+                hours_worked = log.get("total_hours", 0)
+            else:
+                start_time = None
+                end_time = None
+                hours_worked = 0
+            
+            if working_hours == 0:
+                absent = 1 if hours_worked == 0 else 0
+                record = {
+                    "date": current_date.date(),
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "hours_worked": round(hours_worked, 2),
+                    "overtime": 0,
+                    "undertime": 0,
+                    "absent": absent
+                }
+            else:
+                # Using your thresholds: Present if hours >= 90% of working_hours, undertime if between 40% and working_hours, absent if less than 40%
+                overtime = 1 if hours_worked > working_hours else 0
+                undertime = 1 if working_hours > hours_worked >= 0.4 * working_hours else 0
+                absent = 1 if hours_worked < 0.4 * working_hours else 0
+                # Determine attendance status based on rules
+                if hours_worked >= 0.9 * working_hours:
+                    status = "present"
+                elif undertime:
+                    status = "undertime"
+                elif absent:
+                    status = "absent"
+                else:
+                    status = "absent"
+    
+                record = {
+                    "date": current_date.date(),
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "hours_worked": round(hours_worked, 2),
+                    "overtime": overtime,
+                    "undertime": undertime,
+                    "absent": absent,
+                    "attendance_status": status
+                }
+            summary.append(record)
+        current_date += timedelta(days=1)
+        
+    return summary
+
+async def calculate_attendance_totals(employee: dict, month: int, year: int) -> Dict:
+    """
+    Uses the daily summary to calculate:
+      - total present days
+      - total absent days
+      - total overtime hours (sum of extra hours beyond working_hours for each day)
+      - total undertime hours (sum of missing hours to reach working_hours for days with undertime)
+    """
+    summary = await get_attendance_summary_for_employee(employee, month, year)
+    total_present = sum(1 for record in summary if record.get("attendance_status") == "present")
+    total_absent = sum(1 for record in summary if record.get("attendance_status") == "absent")
+    
+    # For overtime and undertime, we sum the differences. (Assumes that if hours_worked > working_hours, extra hours count as overtime)
+    working_hours = employee.get("working_hours", 8)
+    total_overtime = 0
+    total_undertime = 0
+    for record in summary:
+        hours_worked = record.get("hours_worked", 0)
+        if hours_worked > working_hours:
+            total_overtime += hours_worked - working_hours
+        elif 0.4 * working_hours <= hours_worked < working_hours:
+            total_undertime += working_hours - hours_worked
+
+    return {
+        "total_present_days": total_present,
+        "total_absent_days": total_absent,
+        "total_overtime_hours": round(total_overtime, 2),
+        "total_undertime_hours": round(total_undertime, 2)
+    }
