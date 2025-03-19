@@ -7,6 +7,7 @@ from db import leaves_collection, employees_collection
 from schemas.notification import NotificationType
 from utils.app_utils import get_current_user
 from utils.notification_utils import create_leave_notification
+from utils.activity_utils import log_admin_activity
 from exceptions import get_user_exception
 
 UTC = timezone.utc
@@ -197,6 +198,13 @@ async def approve_leave(leave_id: str, user_and_type: tuple = Depends(get_curren
         company_id=employee["company_id"]
     )
 
+    await log_admin_activity(
+        admin_id=str(user["_id"]),
+        type="leave",
+        action="approved",
+        status="success"
+    )
+
     return {"message": "Leave approved and leave days deducted"}
 
 
@@ -282,6 +290,13 @@ async def reject_leave(leave_id: str, user_and_type: tuple = Depends(get_current
             recipient_id=employee["employee_id"],
             company_id=employee["company_id"]
             )
+        
+        await log_admin_activity(
+            admin_id=str(user["_id"]),
+            type="leave",
+            action="rejected",
+            status="success"
+        )
 
         return {"message": "Leave was successfully rejected"}
     

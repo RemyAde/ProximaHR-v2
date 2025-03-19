@@ -6,6 +6,7 @@ from schemas.employee import CreateEmployee, EditEmployee
 from models.employees import Employee
 from db import client, employees_collection, companies_collection, departments_collection
 from utils.app_utils import get_current_user, generate_password, hash_password
+from utils.activity_utils import log_admin_activity
 from exceptions import get_unknown_entity_exception, get_user_exception
 
 
@@ -80,9 +81,10 @@ async def list_employees(
 
         skip = (page - 1) * page_size
 
-        # Build the query filter dynamically
+        # Build the query filter dynamically, excluding inactive employees
         query_filter = {
             "company_id": company_id,
+            "employment_status": {"$ne": "inactive"}
         }
         
         if department_name:  # Add department filter if provided
@@ -283,6 +285,9 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
     
     # Return success response
     data = {"employee_id": employee_instance.employee_id, "password": employee_pwd}
+
+    await log_admin_activity(admin_id=str(user["_id"]), type="create_employee", action=f"Created {employee_instance.first_name} profile", status="success")
+
     return {"message": "Employee account created successfully", "data": data}
 
 
@@ -351,6 +356,8 @@ async def edit_employee_profile(
 
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Failed to update employee profile")
+    
+    await log_admin_activity(admin_id=str(user["_id"]), type="update_employee", action=f"Edited '{employee['first_name']}' profile", status="success")
 
     return {"message": "Employee profile updated successfully", "updated_fields": update_data}
 
@@ -412,6 +419,8 @@ async def suspend_employee(
             }
         }
     )
+
+    await log_admin_activity(admin_id=str(user["_id"]), type="suspend_employee", action=f"Suspended {employee['first_name']} profile", status="success")
     
     return {"message": "Employee successfully suspended"}
 
@@ -425,6 +434,7 @@ async def deactivate_employee(
 ):
     """
     Deactivates an employee by updating their employment status to 'inactive'.
+    Reduces the company's staff size upon successful deactivation.
     Args:
         company_id (str): The ID of the company.
         employee_id (str): The ID of the employee to deactivate.
@@ -455,7 +465,8 @@ async def deactivate_employee(
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     
-    await employees_collection.update_one(
+    # Deactivate the employee
+    result = await employees_collection.update_one(
         {"employee_id": employee_id},
         {
             "$set": {
@@ -463,6 +474,20 @@ async def deactivate_employee(
                 "deactivation": deactivation_data
             }
         }
+    )
+    
+    # Reduce company staff size if deactivation was successful
+    if result.modified_count > 0:
+        await companies_collection.update_one(
+            {"registration_number": company_id},
+            {"$inc": {"staff_size": -1}}
+        )
+
+    await log_admin_activity(
+        admin_id=str(user["_id"]),
+        type="deactivate_employee",
+        action=f"Deactivated {employee['first_name']} profile",
+        status="success"
     )
     
     return {"message": "Employee successfully deactivated"}
@@ -556,6 +581,8 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
             {"registration_number": company_id},
             {"$inc": {"staff_size": 1}}
         )
+
+        await log_admin_activity(admin_id=str(user["_id"]), type="create_employee", action=f"Created {employee_instance.first_name} profile", status="success")
 
         # Return success response
         data = {"employee_id": employee_instance.employee_id, "password": employee_pwd}

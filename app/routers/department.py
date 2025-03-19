@@ -2,10 +2,11 @@ from typing import Optional
 from pymongo import ASCENDING
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
-from db import departments_collection, companies_collection, employees_collection
+from db import departments_collection, companies_collection, employees_collection, admins_collection
 from models.departments import Department
 from schemas.department import DepartmentCreate, DepartmentEdit
 from utils.app_utils import get_current_user
+from utils.activity_utils import log_admin_activity
 from exceptions import get_user_exception, get_unknown_entity_exception
 
 
@@ -173,6 +174,14 @@ async def create_department(
         # Create and insert department
         department_instance = Department(**department_obj_dict)
         await departments_collection.insert_one(department_instance.model_dump())
+
+        # Log the admin activity
+        await log_admin_activity(
+            admin_id=str(user.get("_id")), 
+            type="department",
+            status="success",
+            action=f"Created department '{department_instance.name}'"
+        )
 
         return {"message": "Department created successfully"}
     

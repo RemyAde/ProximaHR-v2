@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from db import companies_collection, admins_collection
+from db import companies_collection, admins_collection, employees_collection, departments_collection, leaves_collection, system_activity_collection
 from schemas.admin import CreateAdmin, ExtendedAdmin
 # from schemas.employee import ImageUpload
 from models.admins import Admin
@@ -222,3 +222,27 @@ async def update_admin(
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Update failed")
     return {"message": "Admin profile updated successfully"}
+
+
+@router.get("/recent-activities", summary="Get today's activity summary for logged in admin")
+async def get_admin_activities(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieve the 5 most recent admin-related activities for the logged-in admin.
+    """
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    # Retrieve the 5 most recent activity-based entries from system_activity_collection for the logged-in admin
+    activities = await system_activity_collection.find({
+        "admin_id": str(user["_id"])
+    }).sort("timestamp", -1).limit(5).to_list(length=None)
+
+    # Convert ObjectId fields to string
+    for activity in activities:
+        if '_id' in activity:
+            activity['_id'] = str(activity['_id'])
+        if 'admin_id' in activity:
+            activity['admin_id'] = str(activity['admin_id'])
+    
+    return {"admin_activities": activities}
