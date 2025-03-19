@@ -252,7 +252,7 @@ async def calculate_monthly_attendance_percentage(month: int, year: int, user_an
         attendance_percentage = (actual_hours / ideal_hours) * 100
 
         return {
-            "employee_id": str(user.get("_id")),
+            "employee_id": str(user.get("employee_id")),
             "month": month,
             "year": year,
             "attendance_percentage": attendance_percentage,
