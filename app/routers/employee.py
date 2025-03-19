@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
+from bson import ObjectId
 from fastapi import APIRouter, File, HTTPException, Depends, Request, UploadFile, status
 from db import employees_collection, leaves_collection, admins_collection
 from models.employees import Employee
@@ -305,3 +306,40 @@ async def update_employee_profile(
         raise HTTPException(status_code=400, detail="Profile update failed")
    
     return {"message": "Profile updated successfully"}
+
+
+@router.get("/leave-statistics")
+async def get_leave_statistics(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Returns the count of pending leave requests, the number of annual leave days remaining,
+    and the count of approved leave requests for the current employee.
+    """
+    user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
+    employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id")), "company_id": user.get("company_id")})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    # Count pending leave requests
+    pending_count = await leaves_collection.count_documents({
+        "company_id": employee["company_id"],
+        "employee_id": employee.get("employee_id"),
+        "status": "pending"
+    })
+    
+    # Count approved leaves
+    approved_count = await leaves_collection.count_documents({
+        "company_id": employee["company_id"],
+        "employee_id": employee.get("employee_id"),
+        "status": "approved"
+    })
+ 
+    remaining = employee.get("annual_leave_days", 0)
+    
+    return {
+        "pending_leave_requests": pending_count,
+        "approved_leave_requests": approved_count,
+        "annual_leave_days_remaining": remaining
+    }
