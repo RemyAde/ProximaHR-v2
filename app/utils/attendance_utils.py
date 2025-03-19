@@ -498,3 +498,44 @@ async def calculate_attendance_totals(employee: dict, month: int, year: int) -> 
         "total_overtime_hours": round(total_overtime, 2),
         "total_undertime_hours": round(total_undertime, 2)
     }
+
+
+async def calculate_attendance_percentage_and_overtime_total(employee: dict, month: int, year: int) -> Dict:
+    """
+    Using the daily summary, calculate totals:
+      - attendance percentage for the month,
+      - total overtime hours.
+    """
+    summary = await get_attendance_summary_for_employee(employee, month, year)
+    # Sum actual hours worked from the daily summary.
+    total_actual_hours = sum(record["hours_worked"] for record in summary)
+    working_hours = employee.get("working_hours", 8)
+    # Ideal hours based on weekly workdays and working hours.  
+    # (Assumes get_ideal_monthly_hours returns the total workable hours in the month.)
+    weekly_workdays = int(employee.get("weekly_workdays", 5))
+    ideal_hours = await get_ideal_monthly_hours(weekly_workdays=weekly_workdays, working_hours=working_hours, month=month, year=year)
+    attendance_percentage = (total_actual_hours / ideal_hours) * 100 if ideal_hours > 0 else 0
+    total_overtime = sum(max(0, record["hours_worked"] - working_hours) for record in summary)
+    
+    return {
+        "attendance_percentage": round(attendance_percentage, 2),
+        "total_overtime_hours": round(total_overtime, 2)
+    }
+
+async def get_employee_monthly_report(employee: dict, month: int, year: int) -> Dict:
+    """
+    Build and return a report for an employee that includes:
+      - Attendance percentage for the month,
+      - Annual leave balance,
+      - Net pay,
+      - Total overtime hours for the month.
+    It uses attendance totals computed above, and retrieves leave and pay data from the employee record.
+    """
+    attendance_data = await calculate_attendance_percentage_and_overtime_total(employee, month, year)
+    
+    return {
+        "attendance_percentage": attendance_data["attendance_percentage"],
+        "annual_leave_balance": employee.get("annual_leave_days", 0),
+        "net_pay": employee.get("net_pay", 0),
+        "total_overtime_hours": attendance_data["total_overtime_hours"]
+    }

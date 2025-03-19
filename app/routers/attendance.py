@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from db import employees_collection, timer_logs_collection, leaves_collection
 from models.attendance import TimerLog
 from utils.attendance_utils import (calculate_attendance_status, get_ideal_monthly_hours, 
-                                    get_attendance_summary_for_employee, calculate_attendance_totals)
+                                    get_attendance_summary_for_employee, calculate_attendance_totals,
+                                    get_employee_monthly_report)
 from utils.app_utils import get_current_user
 
 router = APIRouter()
@@ -444,6 +445,7 @@ async def endpoint_attendance_summary(
     summary = await get_attendance_summary_for_employee(employee, month, year)
     return summary
 
+
 @router.get("/employee/attendance-totals", response_model=Dict)
 async def endpoint_attendance_totals(
     year: int = Query(..., description="Year for the attendance report"),
@@ -461,3 +463,25 @@ async def endpoint_attendance_totals(
     
     totals = await calculate_attendance_totals(employee, month, year)
     return totals
+
+
+@router.get("/employee/monthly-stats", response_model=Dict)
+async def endpoint_employee_monthly_report(
+    month: int = Query(..., description="Month for the report"),
+    year: int = Query(..., description="Year for the report"),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Returns the current employee's monthly report including:
+      - Attendance percentage for the month,
+      - Annual leave balance,
+      - Net pay,
+      - Total overtime hours for the month.
+    """
+    user, user_type = user_and_type
+    employee = await employees_collection.find_one({"_id": ObjectId(user.get("_id")), "company_id": user.get("company_id")})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    report = await get_employee_monthly_report(employee, month, year)
+    return report
