@@ -246,7 +246,7 @@ async def calculate_daily_attendance(
 
     
 @router.get("/employee/attendance-summary")
-async def get_monthly_attendance_record(user_and_type: tuple = Depends(get_current_user)):
+async def get_attendance_summary(user_and_type: tuple = Depends(get_current_user)):
     """
     This function fetches and analyzes attendance data for the employee within the current month,
     including approved leaves, work hours, and various attendance statuses. It also returns the
@@ -411,7 +411,7 @@ async def get_monthly_attendance_record(user_and_type: tuple = Depends(get_curre
 
 
 @router.get("/employee/attendance-tracking", response_model=List[Dict])
-async def endpoint_attendance_summary(
+async def get_attendance_and_tracking_details(
     year: int = Query(..., description="Year for the attendance report"),
     month: int = Query(..., description="Month for the attendance report"),
     user_and_type: tuple = Depends(get_current_user)
