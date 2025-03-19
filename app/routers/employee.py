@@ -343,3 +343,39 @@ async def get_leave_statistics(user_and_type: tuple = Depends(get_current_user))
         "approved_leave_requests": approved_count,
         "annual_leave_days_remaining": remaining
     }
+
+
+@router.get("/leave-summary")
+async def get_leave_cards(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieves a summary of leave information for the current employee, including:
+    - Allocated annual leave days
+    - Used leave days
+    - Remaining leave days
+    - Number of pending leave requests
+    """
+    user, user_type = user_and_type
+
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
+    employee = await employees_collection.find_one({"employee_id": user.get("employee_id"), "company_id": user.get("company_id")})
+
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    remaining_leave_days = employee.get("annual_leave_days", 0) # annual leave days decreases with approval
+    used_leave_days = employee.get("used_leave_days", 0)
+    allocated_leave_days = remaining_leave_days + used_leave_days
+    pending_leaves_count = await leaves_collection.count_documents({
+        "employee_id": user.get("employee_id"),
+        "company_id": user.get("company_id"),
+        "status": "pending"
+    })
+
+    return {
+        "allocated_leave_days": allocated_leave_days,
+        "used_leave_days": used_leave_days,
+        "remaining_leave_days": remaining_leave_days,
+        "pending_leaves": pending_leaves_count
+    }
