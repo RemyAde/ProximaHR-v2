@@ -379,3 +379,30 @@ async def get_leave_cards(user_and_type: tuple = Depends(get_current_user)):
         "remaining_leave_days": remaining_leave_days,
         "pending_leaves": pending_leaves_count
     }
+
+
+@router.get("/leaves")
+async def get_employee_leaves(user_and_type: tuple = Depends(get_current_user)):
+    """
+    Retrieves all leave requests for the current employee, ordered by edited_at and created_at fields.
+    Returns:
+    -------
+    List[Leave]
+        A list of Leave objects representing the employee's leave requests.
+    Raises:
+    ------
+    HTTPException
+        - 403 if the user is not an employee.
+        - 404 if the employee is not found.
+    """
+    user, user_type = user_and_type
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    employee = await employees_collection.find_one({"employee_id": user.get("employee_id"), "company_id": user.get("company_id")})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    leaves = []
+    async for leave in leaves_collection.find({"employee_id": user.get("employee_id"), "company_id": user.get("company_id")}).sort([("edited_at", -1), ("created_at", -1)]):
+        leave["_id"] = str(leave["_id"])
+        leaves.append(Leave(**leave))
+    return leaves
