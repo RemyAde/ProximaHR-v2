@@ -20,7 +20,10 @@ directory = os.path.join(BASE_DIR, "static")
 
 PROD_MODE = settings.PRODUCTION_MODE
 
-app = FastAPI(title=settings.PROJECT_TITLE)
+app = FastAPI(
+    title=settings.PROJECT_TITLE,
+    root_path="/api/v2"
+)
 
 app.mount("/static", StaticFiles(directory=directory), name="static")
 
