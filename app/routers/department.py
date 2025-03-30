@@ -42,7 +42,7 @@ async def list_departments(company_id: str,
 
     user, user_type = user_and_type
     if user_type != "admin":
-        raise get_user_exception()
+        raise HTTPException(status_code=403, detail="Unauthorized user!")
     
     try:
         company = await companies_collection.find_one({"registration_number": company_id})
