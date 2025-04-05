@@ -75,7 +75,7 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str):
 
 
 @router.post("/profile-image-upload")
-async def upload_profile_image(request: Request, company_id: str, image_file: UploadFile = File(...), user_and_type: tuple = Depends(get_current_user)):
+async def upload_profile_image(request: Request, image_file: UploadFile = File(...), user_and_type: tuple = Depends(get_current_user)):
     """
     Uploads a profile image for the company admin.
     Args:
@@ -96,8 +96,12 @@ async def upload_profile_image(request: Request, company_id: str, image_file: Up
     """
     user, user_type = user_and_type
 
-    if company_id != user.get("company_id"):
-        raise HTTPException(status_code=403, detail="You are not authorized to perform this function")
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company ID not found")
 
     if not image_file:
         raise HTTPException(status_code=400, detail="You must upload an image file")
@@ -117,7 +121,7 @@ async def upload_profile_image(request: Request, company_id: str, image_file: Up
 
 
 @router.delete("/delete-profile-image")
-async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def delete_profile_image(user_and_type: tuple = Depends(get_current_user)):
     """
     Delete profile image for a company admin.
     This function removes the profile image reference from the admin's document in the database.
@@ -134,8 +138,12 @@ async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(g
     """
     user, user_type = user_and_type
 
-    if company_id != user["company_id"]:
+    if user_type != "admin":
         raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company ID not found")
     
     result = await admins_collection.update_one(
         {"company_id": user["company_id"]},
@@ -148,7 +156,7 @@ async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(g
     
 
 @router.get("/profile")
-async def get_admin_profile(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def get_admin_profile(user_and_type: tuple = Depends(get_current_user)):
     """
     Get the profile of the company admin.
     This function retrieves the profile details of the company admin from the database.
@@ -165,11 +173,12 @@ async def get_admin_profile(company_id: str, user_and_type: tuple = Depends(get_
     """
     user, user_type = user_and_type
 
-    if company_id != user["company_id"]:
-        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
-    
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company ID not found")
     
     admin = await admins_collection.find_one({"company_id": company_id})
     if not admin:
@@ -188,7 +197,7 @@ async def get_admin_profile(company_id: str, user_and_type: tuple = Depends(get_
 
 @router.put("/update-admin")
 async def update_admin(
-    admin_update: ExtendedAdmin, company_id: str, user_and_type: tuple = Depends(get_current_user)
+    admin_update: ExtendedAdmin, user_and_type: tuple = Depends(get_current_user)
 ):
     """
     Updates the admin model with fields defined in the ExtendedAdmin schema.
@@ -206,8 +215,13 @@ async def update_admin(
         HTTPException: If the user is not authorized or if the update fails.
     """
     user, user_type = user_and_type
-    if company_id != user.get("company_id") or user_type != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to update admin profile")
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company ID not found")
+    
     update_data = admin_update.model_dump(exclude_unset=True)
 
     dob = update_data.get("date_of_birth")
@@ -231,7 +245,7 @@ async def get_admin_activities(user_and_type: tuple = Depends(get_current_user))
     """
     user, user_type = user_and_type
     if user_type != "admin":
-        raise HTTPException(status_code=403, detail="Unauthorized")
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
     
     # Retrieve the 5 most recent activity-based entries from system_activity_collection for the logged-in admin
     activities = await system_activity_collection.find({

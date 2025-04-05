@@ -15,7 +15,6 @@ router = APIRouter()
 
 @router.get("/all-employees")
 async def list_employees(
-    company_id: str,
     page: int = 1,
     page_size: int = 10,
     department_name: Optional[str] = None,  # Optional department name query parameter
@@ -61,6 +60,10 @@ async def list_employees(
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()
+    
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
 
     try: 
         data = []
@@ -68,9 +71,7 @@ async def list_employees(
         company = await companies_collection.find_one({"registration_number": company_id})
         if not company:
             raise get_unknown_entity_exception()
-        
-        if company.get("registration_number") != user.get("company_id"):
-            raise get_user_exception()
+
         
         data.append({
             "staff_size": company.get("staff_size", "")
@@ -123,7 +124,6 @@ async def list_employees(
 @router.get("/{employee_id}/employee")
 async def get_employee_details(
     employee_id: str, 
-    company_id: str,
     user_and_type: tuple = Depends(get_current_user)
 ):
     """
@@ -143,13 +143,11 @@ async def get_employee_details(
         HTTPException (401): If the user is not from the same company.
     """
     user, user_type = user_and_type
+    company_id = user.get("company_id")
 
     company = await companies_collection.find_one({"registration_number": company_id})
     if not company:
         raise get_unknown_entity_exception()
-
-    if company.get("registration_number") != user.get("company_id"):
-        raise get_user_exception()
 
     if user_type not in ["admin", "hr"]:
         raise HTTPException(

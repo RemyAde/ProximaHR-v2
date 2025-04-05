@@ -6,12 +6,13 @@ from db import companies_collection, employees_collection, departments_collectio
 from utils.app_utils import get_current_user
 from exceptions import get_user_exception, get_unknown_entity_exception
 from utils.dashboard_utils import get_upcoming_events_for_the_month
+import calendar
 
 router = APIRouter()
 
 
 @router.get("/company-overview")
-async def get_company_info(company_id, user_and_type: tuple = Depends(get_current_user)):
+async def get_company_info(user_and_type: tuple = Depends(get_current_user)):
     """
     Get company overview information for a specific company.
     This endpoint retrieves key metrics and information about a company, including:
@@ -38,6 +39,8 @@ async def get_company_info(company_id, user_and_type: tuple = Depends(get_curren
     user, user_type = user_and_type
     if user_type != "admin":
         raise get_user_exception()
+    
+    company_id = user["company_id"]
 
     try:
         # Initialize with default values
@@ -85,7 +88,7 @@ async def get_company_info(company_id, user_and_type: tuple = Depends(get_curren
 
 
 @router.get("/department-overview")
-async def department_overview(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def department_overview(user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieves an overview of department-related statistics for a specific company.
     This async function provides various metrics including department count, attendance rates,
@@ -113,6 +116,8 @@ async def department_overview(company_id: str, user_and_type: tuple = Depends(ge
     
     if user_type != "admin":
         raise get_user_exception()
+    
+    company_id = user["company_id"]
         
     try:
         data = {
@@ -179,7 +184,7 @@ async def department_overview(company_id: str, user_and_type: tuple = Depends(ge
 
     
 @router.get("/leave-overview")
-async def leave_overview(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def leave_overview(user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieves an overview of leave statistics for a specific company.
     This asynchronous function provides a summary of leave-related metrics including
@@ -206,6 +211,8 @@ async def leave_overview(company_id: str, user_and_type: tuple = Depends(get_cur
     
     if user_type != "admin":
         raise get_user_exception()
+    
+    company_id = user["company_id"]
 
     try:
         data = {
@@ -263,7 +270,7 @@ async def leave_overview(company_id: str, user_and_type: tuple = Depends(get_cur
     
 
 @router.get("/payroll-overview")
-async def payroll_overview(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def payroll_overview(user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieve payroll overview statistics for a specific company.
     This async function provides key payroll metrics including total payroll costs,
@@ -290,6 +297,8 @@ async def payroll_overview(company_id: str, user_and_type: tuple = Depends(get_c
     
     if user_type != "admin":
         raise get_user_exception()
+    
+    company_id = user["company_id"]
 
     try:
         data = {
@@ -354,11 +363,19 @@ async def payroll_overview(company_id: str, user_and_type: tuple = Depends(get_c
             paid_employees = 0
             paid_percentage = 0.0
 
+        now = datetime.now(UTC)
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        last_date = datetime(now.year, now.month, last_day)
+        
+        # Adjust to the last weekday (Monday to Friday)
+        while last_date.weekday() > 4:  # 4 is Friday, so anything greater is a weekend
+            last_date -= timedelta(days=1)
+
         data.update({
             "total_payroll_cost": total_payroll,
             "paid_percentage": paid_percentage,
             "paid_employees": paid_employees,
-            "next_payroll_date": company.get("next_payroll_date")
+            "next_payroll_date": last_date.isoformat()
         })
 
         return data
@@ -368,7 +385,7 @@ async def payroll_overview(company_id: str, user_and_type: tuple = Depends(get_c
 
 
 @router.get("/events")
-async def get_events(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def get_events(user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieves upcoming birthdays and work anniversaries for employees in a given company.
     This async function fetches events (birthdays and work anniversaries) occurring in the next 30 days
@@ -399,6 +416,8 @@ async def get_events(company_id: str, user_and_type: tuple = Depends(get_current
     
     if user_type != "admin":
         raise get_user_exception()
+    
+    company_id = user["company_id"] 
 
     try:
         data = {
