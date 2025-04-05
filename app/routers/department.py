@@ -14,8 +14,7 @@ router = APIRouter()
 
 
 @router.get("/")
-async def list_departments(company_id: str, 
-                           department_name: Optional[str] = Query(None, description="Search department by name"), 
+async def list_departments(department_name: Optional[str] = Query(None, description="Search department by name"), 
                            user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieve a list of all departments for a given company.
@@ -44,13 +43,12 @@ async def list_departments(company_id: str,
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Unauthorized user!")
     
+    company_id = user.get("company_id")
+    
     try:
         company = await companies_collection.find_one({"registration_number": company_id})
         if not company:
             raise get_unknown_entity_exception()
-
-        if company.get("registration_number") != user.get("company_id"):
-            raise get_user_exception()
         
         data = []
         query_filter = {"company_id": company_id}
@@ -86,7 +84,6 @@ async def list_departments(company_id: str,
 
 @router.post("/create-department", status_code=status.HTTP_201_CREATED)
 async def create_department(
-    company_id: str, 
     department_request: DepartmentCreate, 
     user_and_type: tuple = Depends(get_current_user)
 ):  
@@ -115,15 +112,13 @@ async def create_department(
     if user_type != "admin":
         raise get_user_exception()
     
+    company_id = user.get("company_id")
+    
     try:
         # Verify the company exists
         company = await companies_collection.find_one({"registration_number": company_id})
         if not company:
             raise get_unknown_entity_exception()
-
-        # Ensure the user is part of the company
-        if company.get("registration_number") != user.get("company_id"):
-            raise get_user_exception()
         
         # Check if the department name (case insensitive) already exists
         existing_department = await departments_collection.find_one({
@@ -196,7 +191,6 @@ async def create_department(
 
 @router.get("/{department_id}/department-details")
 async def get_department_details(
-    company_id: str,
     department_id: str = Path(..., description="ID of the department to fetch details for."),
     q: Optional[str] = Query(None, description="Search across employee name, job title, employee ID, status, and work mode"),
     user_and_type: tuple = Depends(get_current_user),
@@ -210,9 +204,11 @@ async def get_department_details(
 
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Unauthorized user!")
+    
+    company_id = user.get("company_id")
 
-    if company_id != user.get("company_id"):
-        raise HTTPException(status_code=403, detail="Unauthorized to access this company.")
+    if not company_id:
+        raise HTTPException(status_code=403, detail="Company ID not found in user data.")
     
     try:
         # Check if the department exists
@@ -282,7 +278,6 @@ async def get_department_details(
 
 @router.put("/{department_id}/edit-department")
 async def edit_department(
-    company_id: str,
     department_request: DepartmentEdit,
     department_id: str = Path(..., description="ID of the department you want to edit"),
     user_and_type: tuple = Depends(get_current_user)
@@ -291,16 +286,14 @@ async def edit_department(
     if user_type != "admin":
         raise get_user_exception()
     
+    company_id = user.get("company_id")
+    
     try:
         # Verify the company exists
         company = await companies_collection.find_one({"registration_number": company_id})
         if not company:
             raise get_unknown_entity_exception()
 
-        # Ensure the user is part of the company
-        if company.get("registration_number") != user.get("company_id"):
-            raise get_user_exception()
-        
         # Fetch the department by its ID
         department = await departments_collection.find_one({"_id": ObjectId(department_id)})
         if not department:
@@ -308,6 +301,14 @@ async def edit_department(
 
         # Initialize the update data dictionary
         update_data = {}
+
+        # Handle `name` update
+        if department_request.name:
+            update_data["name"] = department_request.name
+
+        # Handle `description` update
+        if department_request.description:
+            update_data["description"] = department_request.description
 
         # Handle HOD (Head of Department) update
         new_hod_id = department_request.hod
@@ -398,10 +399,10 @@ async def edit_department(
         raise e
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"An error occurred - {e}")
-        
+
 
 @router.delete("/{department_id}/delete-department")
-async def delete_department(department_id: str, company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def delete_department(department_id: str, user_and_type: tuple = Depends(get_current_user)):
     """
     Deletes a department from the database.
     This async function removes a department entry from the departments collection. It performs
@@ -422,13 +423,12 @@ async def delete_department(department_id: str, company_id: str, user_and_type: 
     if user_type != "admin":
         raise get_user_exception()
     
+    company_id = user.get("company_id")
+    
     try:
         company = await companies_collection.find_one({"registration_number": company_id})
         if not company:
             raise get_unknown_entity_exception()
-
-        if company.get("registration_number") != user.get("company_id"):
-            raise get_user_exception()
         
         department = await departments_collection.find_one({"_id": ObjectId(department_id)})
         if not department:
