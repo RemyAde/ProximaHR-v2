@@ -6,6 +6,7 @@ from models.admins import Admin
 from utils.app_utils import get_current_user, hash_password
 from utils.image_utils import create_media_file
 from datetime import datetime, date, timezone
+from pymongo.errors import PyMongoError
 
 router = APIRouter()
 
@@ -161,11 +162,14 @@ async def get_admin_profile(user_and_type: tuple = Depends(get_current_user)):
     Get the profile of the company admin.
     This function retrieves the profile details of the company admin from the database.
     The user must be authenticated and belong to the company they are trying to access.
+    
     Args:
         company_id (str): The ID of the company whose admin profile should be retrieved
         user_and_type (tuple): A tuple containing user information and type, obtained from authentication dependency
+    
     Returns:
         dict: The profile details of the company admin without sensitive fields
+    
     Raises:
         HTTPException: 
             - 403 if user is not authorized (company_id mismatch or incorrect user type)
@@ -173,26 +177,33 @@ async def get_admin_profile(user_and_type: tuple = Depends(get_current_user)):
     """
     user, user_type = user_and_type
 
-    if user_type != "admin":
-        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
-
     company_id = user.get("company_id")
     if not company_id:
         raise HTTPException(status_code=400, detail="Company ID not found")
     
-    admin = await admins_collection.find_one({"company_id": company_id})
-    if not admin:
-        raise HTTPException(status_code=400, detail="Profile details not found")
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
     
-    # Exclude sensitive fields from the response
-    admin.pop("password", None)
-    admin.pop("date_created", None)
-    
-    # Convert ObjectId to string for JSON serialization
-    if "_id" in admin:
-        admin["_id"] = str(admin["_id"])
-    
-    return admin
+    try:
+        admin = await admins_collection.find_one({"company_id": company_id})
+        if not admin:
+            raise HTTPException(status_code=400, detail="Profile details not found")
+
+        # Exclude sensitive fields from the response
+        admin.pop("password", None)
+        admin.pop("date_created", None)
+
+        # Convert ObjectId to string for JSON serialization
+        if "_id" in admin:
+            admin["_id"] = str(admin["_id"])
+
+        return admin
+
+    except PyMongoError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"An unexpected error occurred: {str(e)}")
 
 
 @router.put("/update-admin")
