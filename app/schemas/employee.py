@@ -17,7 +17,6 @@ class CreateEmployee(BaseModel):
     home_address: Optional[str] = None
     country: Optional[str] = None
     job_title: Optional[str] = None
-    department: Optional[str] = None
     role: Optional[str] = None
     employment_date: Optional[date] = None
     work_mode: Optional[str] = None
@@ -52,7 +51,6 @@ class EditEmployee(BaseModel):
    home_address: Optional[str] = None
    country: Optional[str] = None
    job_title: Optional[str] = None
-   department: Optional[str] = None
    role: Optional[str] = None
    employment_date: Optional[date] = None
    work_mode: Optional[str] = None

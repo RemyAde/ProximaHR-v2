@@ -171,10 +171,11 @@ async def get_employee_details(
 
 @router.post("/create-employee-profile")
 async def create_employee_profile(employee_request: CreateEmployee, user_and_type: tuple = Depends(get_current_user)):
+async def create_employee_profile(employee_request: CreateEmployee, user_and_type: tuple = Depends(get_current_user)):
     """
-    Creates a new employee profile in the system with associated department and company updates.
+    Creates a new employee profile in the system with associated company updates.
     This asynchronous function handles the creation of an employee profile, including salary calculations,
-    department assignment, and company staff size updates within a transaction.
+    and company staff size updates within a transaction.
     Args:
         employee_request (CreateEmployee): Pydantic model containing employee details including:
             - employee_id
@@ -194,17 +195,19 @@ async def create_employee_profile(employee_request: CreateEmployee, user_and_typ
         HTTPException: 
             - 400: If company not found or employee already exists
             - 401: If user is not authorized or not an admin
-            - 404: If specified department not found
             - 500: If database transaction fails
     Notes:
         - Function performs all database operations within a transaction
         - Automatically calculates net pay based on salary and deductions
-        - Updates both department and company staff counts
+        - Updates company staff counts
         - Generates and hashes a password for the new employee
     """
 
     user, user_type = user_and_type
 
+    if user_type != "admin":
+        raise HTTPException(status_code=401, detail="Unauthorized user!")
+    
     company_id = user.get("company_id")
     if not company_id:  
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
@@ -212,9 +215,6 @@ async def create_employee_profile(employee_request: CreateEmployee, user_and_typ
     company = await companies_collection.find_one({"registration_number": company_id})
     if not company:
         raise HTTPException(status_code=400, detail="Company not found")
-    
-    if user_type != "admin":
-        raise HTTPException(status_code=401, detail="Unauthorized user!")
     
     existing_employee = await employees_collection.find_one({
         "$or": [
@@ -252,20 +252,6 @@ async def create_employee_profile(employee_request: CreateEmployee, user_and_typ
                 # Insert the employee
                 employee_instance = Employee(**employee_request_dict)
                 await employees_collection.insert_one(employee_instance.model_dump(), session=session)
-
-                # Validate and update the department
-                if employee_instance.department:
-                    updated_department = await departments_collection.update_one(
-                        {"name": employee_instance.department},  # Use department name or ID
-                        {
-                            "$push": {"staffs": employee_instance.employee_id},
-                            "$inc": {"staff_size": 1}
-                        },
-                        session=session,
-                        upsert=False
-                    )
-                    if updated_department.matched_count == 0:
-                        raise HTTPException(status_code=404, detail="Department not found")
                 
                 # Increment the company's staff size
                 await companies_collection.update_one(
@@ -396,11 +382,18 @@ async def suspend_employee(
     company_id = user.get("company_id")
     if not company_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
     
     # Find the employee
     employee = await employees_collection.find_one({"employee_id": employee_id})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
+    
+    if employee["company_id"] != company_id:
+        raise get_user_exception()
+
     
     if employee["company_id"] != company_id:
         raise get_user_exception()
@@ -459,11 +452,17 @@ async def deactivate_employee(
     company_id = user.get("company_id")
     if not company_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
     
     # Find the employee
     employee = await employees_collection.find_one({"employee_id": employee_id})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
+    
+    if employee["company_id"] != company_id:
+        raise get_user_exception()
     
     if employee["company_id"] != company_id:
         raise get_user_exception()
