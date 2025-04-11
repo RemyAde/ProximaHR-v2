@@ -355,6 +355,10 @@ async def get_employees(
     
     user, user_type = user_and_type
 
+    company_id = user["company_id"]
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company ID not found")
+
     existing_company = await companies_collection.find_one(
         {"registration_number": company_id}
     )
@@ -366,10 +370,6 @@ async def get_employees(
             status_code=403,
             detail="You are not authorized to view this page"
         )
-
-    company_id = user["company_id"]
-    if not company_id:
-        raise HTTPException(status_code=400, detail="Company ID not found")
 
     try:
         if page < 1:
