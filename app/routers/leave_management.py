@@ -28,7 +28,6 @@ class LeaveList(BaseModel):
 
 @router.get("/", status_code=status.HTTP_200_OK, response_model=LeaveList)
 async def list_leaves(
-    company_id: str,
     status: Optional[str] = Query(
         None, 
         description="Search by pending, approved, or rejected"
@@ -42,7 +41,6 @@ async def list_leaves(
     This async function retrieves leave records from the database, including employee details
     for each leave request. Only admin users can access this endpoint.
     Args:
-        company_id (str): The ID of the company to list leaves for
         status (Optional[str]): Filter leaves by status ('pending', 'approved', or 'rejected')
         skip (int): Number of records to skip for pagination (default: 0)
         limit (int): Maximum number of records to return (default: 10, max: 100)
@@ -67,8 +65,9 @@ async def list_leaves(
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="You are not authorized to perform this function")
 
-    if company_id != user.get("company_id"):
-        raise get_user_exception()
+    company_id = str(user.get("company_id"))
+    if not company_id:
+        raise HTTPException(status_code=401, detail="Company ID not found in user data")
 
     try:
         leave_data = []
