@@ -363,7 +363,6 @@ async def edit_employee_profile(
 
 @router.post("/{employee_id}/suspend-employee")
 async def suspend_employee(
-    company_id: str,
     employee_id: str,
     suspension_data: dict,
     user_and_type: tuple = Depends(get_current_user)
@@ -373,7 +372,6 @@ async def suspend_employee(
     This function updates an employee's status to 'suspended' and records suspension details.
     Only company administrators can suspend employees within their own company.
     Args:
-        company_id (str): The ID of the company
         employee_id (str): The ID of the employee to suspend
         suspension_data (dict): Dictionary containing suspension details including:
             - start_date (str): Suspension start date in "YYYY-MM-DD" format
@@ -395,14 +393,18 @@ async def suspend_employee(
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Unauthorized user!")
     
-    if company_id != user.get("company_id"):
-        raise get_user_exception()
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
     
     # Find the employee
     employee = await employees_collection.find_one({"employee_id": employee_id})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     
+    if employee["company_id"] != company_id:
+        raise get_user_exception()
+
     # Update suspension details
     suspension_data["start_date"] = datetime.strptime(suspension_data["start_date"], "%Y-%m-%d")
     suspension_data["end_date"] = datetime.strptime(suspension_data["end_date"], "%Y-%m-%d")
@@ -426,7 +428,6 @@ async def suspend_employee(
 
 @router.post("/{employee_id}/deactivate-employee")
 async def deactivate_employee(
-    company_id: str,
     employee_id: str,
     deactivation_data: dict,
     user_and_type: tuple = Depends(get_current_user)
@@ -435,7 +436,6 @@ async def deactivate_employee(
     Deactivates an employee by updating their employment status to 'inactive'.
     Reduces the company's staff size upon successful deactivation.
     Args:
-        company_id (str): The ID of the company.
         employee_id (str): The ID of the employee to deactivate.
         deactivation_data (dict): Data related to the deactivation (e.g., reason, date).
         user_and_type (tuple, optional): Tuple containing user info and type. Defaults to Depends(get_current_user).
@@ -456,13 +456,17 @@ async def deactivate_employee(
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Unauthorized user!")
     
-    if company_id != user.get("company_id"):
-        raise get_user_exception()
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
     
     # Find the employee
     employee = await employees_collection.find_one({"employee_id": employee_id})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
+    
+    if employee["company_id"] != company_id:
+        raise get_user_exception()
     
     # Deactivate the employee
     result = await employees_collection.update_one(
