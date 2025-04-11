@@ -170,7 +170,7 @@ async def get_employee_details(
 
 
 @router.post("/create-employee-profile")
-async def create_employee_profile(employee_request: CreateEmployee, company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def create_employee_profile(employee_request: CreateEmployee, user_and_type: tuple = Depends(get_current_user)):
     """
     Creates a new employee profile in the system with associated department and company updates.
     This asynchronous function handles the creation of an employee profile, including salary calculations,
@@ -185,7 +185,6 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
             - company_match (percentage)
             - date_of_birth
             - department (optional)
-        company_id (str): The registration number of the company
         user_and_type (tuple): Tuple containing user details and user type from authentication dependency
     Returns:
         dict: A dictionary containing:
@@ -206,12 +205,13 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
 
     user, user_type = user_and_type
 
+    company_id = user.get("company_id")
+    if not company_id:  
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
+
     company = await companies_collection.find_one({"registration_number": company_id})
     if not company:
         raise HTTPException(status_code=400, detail="Company not found")
-    
-    if user["company_id"] != company_id:
-        raise HTTPException(status_code=401, detail="You are not authorized to be on this page")
     
     if user_type != "admin":
         raise HTTPException(status_code=401, detail="Unauthorized user!")
