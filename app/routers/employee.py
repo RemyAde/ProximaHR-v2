@@ -19,7 +19,6 @@ router = APIRouter()
 
 @router.post("/leave/create")
 async def create_leave(
-    company_id: str, 
     leave_request: CreateLeave, 
     user_and_type: tuple = Depends(get_current_user)
 ):
@@ -47,7 +46,11 @@ async def create_leave(
     """
     user, user_type = user_and_type
 
-    if company_id != user.get("company_id"):
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
+    company_id = user.get("company_id")
+    if not company_id:
         raise HTTPException(status_code=403, detail="You are not authorized to access this page")
 
     employee = await employees_collection.find_one({"company_id": company_id, "employee_id": user.get("employee_id")})
@@ -112,14 +115,13 @@ async def create_leave(
 
 
 @router.post("/profile-image-upload")
-async def upload_profile_image(request: Request, company_id: str, image_file: UploadFile = File(...), user_and_type: tuple = Depends(get_current_user)):
+async def upload_profile_image(request: Request, image_file: UploadFile = File(...), user_and_type: tuple = Depends(get_current_user)):
     """
     Upload a profile image for an employee.
     This async function handles the upload of a profile image for an employee, validates user permissions,
     and updates the employee's profile in the database with the new image URL.
     Args:
         request (Request): The FastAPI request object containing base URL information.
-        company_id (str): The ID of the company the employee belongs to.
         image_file (UploadFile): The image file to be uploaded (passed as a File).
         user_and_type (tuple): A tuple containing user information and user type (from dependency injection).
     Returns:
@@ -136,8 +138,12 @@ async def upload_profile_image(request: Request, company_id: str, image_file: Up
 
     user, user_type = user_and_type
 
-    if company_id != user.get("company_id"):
-        raise HTTPException(status_code=403, detail="You are not authorized to perform this function")
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=403, detail="You are not authorized to access this page")
 
     if not image_file:
         raise HTTPException(status_code=400, detail="You must upload an image file")
@@ -157,7 +163,7 @@ async def upload_profile_image(request: Request, company_id: str, image_file: Up
 
 
 @router.delete("/delete-profile-image")
-async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def delete_profile_image(user_and_type: tuple = Depends(get_current_user)):
     """
     Deletes the profile image of an employee.
     This async function removes the profile image reference from the employee's document
@@ -178,8 +184,12 @@ async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(g
 
     user, user_type = user_and_type
 
-    if company_id != user["company_id"]:
-        raise HTTPException(status_code=403, detail="You are not authorized to perform this action")
+    if user_type != "employee":
+        raise HTTPException(status_code=403, detail="Only employees can access this endpoint")
+    
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=403, detail="You are not authorized to access this page")
     
     result = await employees_collection.update_one(
         {"employee_id": user["employee_id"]},
@@ -191,7 +201,7 @@ async def delete_profile_image(company_id: str, user_and_type: tuple = Depends(g
     
     if result.modified_count == 0:
         raise HTTPException(status_code=400, detail="Image file not deleted.")
-
+        
 
 @router.get("/profile")
 async def get_employee_profile(user_and_type: tuple = Depends(get_current_user)):
