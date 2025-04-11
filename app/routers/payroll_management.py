@@ -35,7 +35,6 @@ async def get_payroll(user_and_type: tuple = Depends(get_current_user)):
     if not company_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Company ID not found")
 
-
 @router.get("/summary")
 async def get_payroll_summary(
     user_and_type: tuple = Depends(get_current_user)
@@ -62,8 +61,11 @@ async def get_payroll_summary(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
             detail="You are not authorized to view this page"
-        )
+            )
 
+    company_id = user["company_id"]
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Company ID not found")
     company_id = user["company_id"]
     if not company_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Company ID not found")
@@ -142,7 +144,6 @@ async def get_payroll_cost_trend(
     This async function calculates and returns monthly payroll costs for a company,
     aggregating various salary components for all active employees.
     Args:
-        company_id (str): The unique identifier of the company to analyze
         year (int, optional): The year to analyze payroll trends for. Defaults to current year
         user_and_type (tuple): Tuple containing user information and type, obtained from dependency
     Returns:
@@ -358,7 +359,7 @@ async def get_employees(
     company_id = user["company_id"]
     if not company_id:
         raise HTTPException(status_code=400, detail="Company ID not found")
-
+    
     existing_company = await companies_collection.find_one(
         {"registration_number": company_id}
     )
