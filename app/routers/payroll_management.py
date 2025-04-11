@@ -8,7 +8,7 @@ router = APIRouter()
 
 
 @router.get("/")
-async def get_payroll(company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def get_payroll(user_and_type: tuple = Depends(get_current_user)):
     """
     Retrieve payroll information for a specific company.
     This endpoint is restricted to admin users and can only be accessed by users
@@ -31,13 +31,13 @@ async def get_payroll(company_id: str, user_and_type: tuple = Depends(get_curren
     if user_type != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to view this page")
     
-    if company_id != user["company_id"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to view this page")
+    company_id = user["company_id"]
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Company ID not found")
 
 
 @router.get("/summary")
 async def get_payroll_summary(
-    company_id: str = Query(..., description="Company ID to filter payroll data"),
     user_and_type: tuple = Depends(get_current_user)
 ):
     """
@@ -45,8 +45,6 @@ async def get_payroll_summary(
     This endpoint is restricted to admin users and can only be accessed by users
     belonging to the specified company.
     Args:
-        company_id (str): The
-        unique identifier of the company.
         user_and_type (tuple): A tuple containing user information and user type,
             obtained from the get_current_user dependency.
             First element is the user dict, second element is the user type string.
@@ -66,11 +64,9 @@ async def get_payroll_summary(
             detail="You are not authorized to view this page"
         )
 
-    if company_id != user["company_id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="You are not authorized to view this page"
-        )
+    company_id = user["company_id"]
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Company ID not found")
 
     try:
         # 1. Payroll Cost: Sum of base_salary + allowances + company_match
@@ -138,7 +134,6 @@ async def get_payroll_summary(
 
 @router.get("/cost-trend")
 async def get_payroll_cost_trend(
-    company_id: str = Query(..., description="Company ID to filter payroll data"),
     year: int = Query(None, description="Year to view payroll trend"),
     user_and_type: tuple = Depends(get_current_user)
 ):
@@ -152,7 +147,6 @@ async def get_payroll_cost_trend(
         user_and_type (tuple): Tuple containing user information and type, obtained from dependency
     Returns:
         dict: A dictionary containing:
-            - company_id (str): The company identifier
             - year (int): The analyzed year
             - payroll_cost_trend (list): List of dictionaries containing:
                 - month (int): Month number (1-12)
@@ -178,11 +172,9 @@ async def get_payroll_cost_trend(
             detail="You are not authorized to view this page"
         )
 
-    if company_id != user["company_id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="You are not authorized to view this page"
-        )
+    company_id = user["company_id"]
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Company ID not found")
     
     try:
         # Get the minimum year from the earliest `date_created` field
@@ -255,7 +247,6 @@ async def get_payroll_cost_trend(
 
 @router.get("/cost-distribution")
 async def payroll_cost_distribution(
-    company_id: str = Query(..., description="Company ID to filter employees"),
     user_and_type: tuple = Depends(get_current_user)
 ):
     """
@@ -271,11 +262,9 @@ async def payroll_cost_distribution(
             detail="You are not authorized to view this page"
         )
 
-    if company_id != user["company_id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="You are not authorized to view this page"
-        )
+    company_id = user["company_id"]
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Company ID not found")
     
     try:
         # Query active employees for the company
@@ -329,7 +318,6 @@ async def payroll_cost_distribution(
 
 @router.get("/employees")
 async def get_employees(
-    company_id: str = Query(..., description="Company ID to filter payroll data"),
     page: int = 1,
     page_size: int = 10,
     name: str = Query(None, description="Search by employee's first name, last name, or employee ID."),
@@ -344,8 +332,6 @@ async def get_employees(
     This endpoint is restricted to admin users and can only be accessed by users
     belonging to the specified company.
     Args:
-        company_id (str): The
-        unique identifier of the company.
         page (int): The page number to retrieve (default: 1)
         page_size (int): The number of records to retrieve per page (default: 10)
         name (str): Search by employee's first name, last name, or employee ID.
@@ -381,11 +367,9 @@ async def get_employees(
             detail="You are not authorized to view this page"
         )
 
-    if company_id != user["company_id"]:
-        raise HTTPException(
-            status_code=403,
-            detail="You are not authorized to view this page"
-        )
+    company_id = user["company_id"]
+    if not company_id:
+        raise HTTPException(status_code=400, detail="Company ID not found")
 
     try:
         if page < 1:
