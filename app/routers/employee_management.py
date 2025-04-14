@@ -171,7 +171,6 @@ async def get_employee_details(
 
 @router.post("/create-employee-profile")
 async def create_employee_profile(employee_request: CreateEmployee, user_and_type: tuple = Depends(get_current_user)):
-async def create_employee_profile(employee_request: CreateEmployee, user_and_type: tuple = Depends(get_current_user)):
     """
     Creates a new employee profile in the system with associated company updates.
     This asynchronous function handles the creation of an employee profile, including salary calculations,
