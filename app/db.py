@@ -7,7 +7,7 @@ if settings.PRODUCTION_MODE:
 else:
     client = AsyncIOMotorClient(settings.DEV_URL)
     
-db = client.hr_system
+db = client.ProximaHR
 
 
 companies_collection = db.companies
