@@ -228,7 +228,7 @@ async def reset_password(email: EmailStr = Query(...), passwords: PasswordReset 
     return {"message": "Password reset successfully"}
 
 
-@router.post("/auth/change-password")
+@router.post("/change-password")
 async def change_password(passwords: ChangePassword = Body(...), user_and_type: tuple = Depends(get_current_user)):
     """
     Change the password for the authenticated user.

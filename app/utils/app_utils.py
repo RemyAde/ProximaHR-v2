@@ -18,7 +18,7 @@ from datetime import datetime, timezone, timedelta, tzinfo
 
 UTC = timezone.utc
 
-oauth2_bearer = OAuth2PasswordBearer(tokenUrl="company/login/")
+oauth2_bearer = OAuth2PasswordBearer(tokenUrl="auth/login/")
 
 secret_key = settings.SECRET_KEY
 algorithm = settings.ALGORITHM
