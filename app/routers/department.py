@@ -169,7 +169,12 @@ async def create_department(
         # Create and insert department
         department_instance = Department(**department_obj_dict)
         await departments_collection.insert_one(department_instance.model_dump())
-
+        # Update department field for added employees
+        for staff_id in staff_ids:
+            await employees_collection.update_one(
+            {"employee_id": staff_id, "company_id": company_id},
+            {"$set": {"department": str(department_instance.id)}}
+            )
         # Log the admin activity
         await log_admin_activity(
             admin_id=str(user.get("_id")), 
@@ -303,7 +308,15 @@ async def edit_department(
         update_data = {}
 
         # Handle `name` update
-        if department_request.name:
+        if department_request.name and department_request.name != department.get("name"):
+            # Check if the department name (case insensitive) already exists
+            existing_department = await departments_collection.find_one({
+                "name": {"$regex": f"^{department_request.name}$", "$options": "i"},
+                "company_id": company_id,
+                "_id": {"$ne": department["_id"]}  # Exclude the current department
+            })
+            if existing_department:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Department name already exists")
             update_data["name"] = department_request.name
 
         # Handle `description` update
@@ -358,6 +371,12 @@ async def edit_department(
                     )
             # Add the new staff members
             update_data["staffs"] = list(set(department.get("staffs", [])) | set(staff_ids_to_add))
+            # Update department field for added employees
+            for staff_id in staff_ids_to_add:
+                await employees_collection.update_one(
+                    {"employee_id": staff_id, "company_id": company_id},
+                    {"$set": {"department": str(department["_id"])}}
+                )
 
         # Validate removal of staff members
         staff_ids_to_remove = department_request.remove_staffs

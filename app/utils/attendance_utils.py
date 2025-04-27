@@ -4,7 +4,7 @@ from typing import Dict, List
 from pytz import UTC
 
 from fastapi import HTTPException
-from db import employees_collection, timer_logs_collection, leaves_collection
+from db import employees_collection, timer_logs_collection, leaves_collection, departments_collection
 
 
 def calculate_attendance_status(hours_worked: float, working_hours: float, is_leave_day: bool) -> str:
@@ -52,8 +52,16 @@ async def calculate_department_metrics(company_id: str, month: int, year: int):
 
         department_summary = {}
 
+        # Fetch all unique department IDs from employees
+        department_ids = {employee["department"] for employee in employees}
+
+        # Fetch department names based on IDs (assuming you have a departments_collection)
+        departments = await departments_collection.find({"_id": {"$in": list(department_ids)}}).to_list(length=None)
+        department_name_by_id = {str(dept["_id"]): dept["name"] for dept in departments}
+
         for employee in employees:
-            department = employee["department"]
+            department_id = employee["department"]
+            department = department_name_by_id.get(str(department_id), "Unknown Department")  # Get department name from ID
             weekly_workdays = employee.get("weekly_workdays", 5)
             working_hours = employee.get("working_hours", 8)
             if department not in department_summary:

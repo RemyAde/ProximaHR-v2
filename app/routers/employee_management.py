@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+from bson import ObjectId
 from pymongo.errors import PyMongoError
 from fastapi import APIRouter, Depends, Query, status, HTTPException
 from schemas.employee import CreateEmployee, EditEmployee
@@ -88,8 +89,13 @@ async def list_employees(
             "employment_status": {"$ne": "inactive"}
         }
         
-        if department_name:  # Add department filter if provided
-            query_filter["department"] = {"$regex": f"^{department_name}$", "$options": "i"}
+        if department_name:
+            department = await departments_collection.find_one({"name": {"$regex": f"^{department_name}$", "$options": "i"}})
+            if department:
+                query_filter["department"] = str(department["_id"])
+            else:
+                # If department doesn't exist, return an empty list
+                return {"data": []}
         
         if name:  # Add name/employee_id search filter
             query_filter["$or"] = [
@@ -102,6 +108,13 @@ async def list_employees(
         employees_list = await employees_collection.find(query_filter).sort("employment_date", 1).skip(skip).limit(page_size).to_list(length=page_size)
         
         for employee in employees_list:
+            department_id = employee.get("department")
+            try:
+                department = await departments_collection.find_one({"_id": ObjectId(department_id)}) if department_id else None
+                department_name = department.get("name") if department else None
+            except Exception as e:
+                department_name = employee.get("department", "")
+
             data.append({
                 "company_id": employee.get("company_id", ""),
                 "profile_image": employee.get("profile_image", ""),
@@ -109,7 +122,7 @@ async def list_employees(
                 "email": employee.get("email", ""),
                 "name": f"{employee['first_name']} {employee['last_name']}",
                 "job_title": employee.get("job_title", ""),
-                "department": employee.get("department", ""),
+                "department": department_name,
                 "work_mode": employee.get("work_mode", ""),
                 "position": employee.get("position", ""),
                 "employment_status": employee.get("employment_status", ""),
@@ -156,12 +169,20 @@ async def get_employee_details(
         )
     
     # Fetch employee from database
-    employee = await employees_collection.find_one({"employee_id": employee_id}) #ensure only company employee is accessible
+    employee = await employees_collection.find_one({"employee_id": employee_id, "company_id": company_id}) #ensure only company employee is accessible
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, 
             detail="Employee not found."
         )
+    
+    department_id = employee.get("department")
+    try:
+        department = await departments_collection.find_one({"_id": ObjectId(department_id)}) if department_id else None
+        department_name = department.get("name") if department else None
+        employee["department"] = department_name
+    except Exception as e:
+        employee["department"] = employee.get("department", "")
     
     # Serialize and omit fields
     serialized_employee = Employee(**employee).model_dump(exclude={"company_id", "password", "date_created"})
@@ -248,6 +269,26 @@ async def create_employee_profile(employee_request: CreateEmployee, user_and_typ
     async with await client.start_session() as session:
         async with session.start_transaction():
             try:
+
+                # make a check on the department name and an existing department name
+                if employee_request.department:
+                    department = await departments_collection.find_one({"name": {"$regex": f"^{employee_request.department}$", "$options": "i"}})
+                    if not department:
+                        raise HTTPException(status_code=400, detail="Department does not exist")
+                    
+                    # Update the department with the new employee
+                    await departments_collection.update_one(
+                        {"_id": department["_id"]},
+                        {
+                            "$push": {"staffs": employee_request_dict["employee_id"]},
+                            "$inc": {"staff_size": 1}
+                        },
+                        session=session
+                    )
+                
+                # store the employee.department as the id of the chosen department
+                employee_request_dict["department"] = str(department["_id"])
+            
                 # Insert the employee
                 employee_instance = Employee(**employee_request_dict)
                 await employees_collection.insert_one(employee_instance.model_dump(), session=session)
@@ -495,13 +536,12 @@ async def deactivate_employee(
 
 
 @router.post("/test-create-employee-profile")
-async def create_employee_profile(employee_request: CreateEmployee, company_id: str, user_and_type: tuple = Depends(get_current_user)):
+async def create_employee_profile(employee_request: CreateEmployee, user_and_type: tuple = Depends(get_current_user)):
     """Creates a new employee profile in the system.
     This endpoint is for testing purposes only and should not be consumed by frontend applications.
     It is used exclusively by backend engineers for testing employee creation flows.
     Args:
         employee_request (CreateEmployee): The employee data model containing all required employee information
-        company_id (str): The registration number/ID of the company
         user_and_type (tuple): Tuple containing authenticated user info and user type, from dependency
     Returns:
         dict: A dictionary containing:
@@ -522,6 +562,14 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
         - For testing purposes only - not for production use
     """
     user, user_type = user_and_type
+    
+    company_id = user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized user!")
+    
+    # Check if the user is authorized
+    if user_type != "admin":
+        raise HTTPException(status_code=401, detail="Unauthorized user!")
 
     company = await companies_collection.find_one({"registration_number": company_id})
     if not company:
@@ -564,18 +612,36 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
 
     try:
         # Insert the employee
+        if employee_request.department:
+                    department = await departments_collection.find_one({"name": {"$regex": f"^{employee_request.department}$", "$options": "i"}})
+                    if not department:
+                        raise HTTPException(status_code=400, detail="Department does not exist")
+                    
+                    # Update the department with the new employee
+                    await departments_collection.update_one(
+                        {"_id": department["_id"]},
+                        {
+                            "$push": {"staffs": employee_request_dict["employee_id"]},
+                            "$inc": {"staff_size": 1}
+                        },
+                    )
+                
+                # store the employee.department as the id of the chosen department
+        employee_request_dict["department"] = str(department["_id"])
+
         employee_instance = Employee(**employee_request_dict)
         await employees_collection.insert_one(employee_instance.model_dump())
 
         # Update department if specified
-        if employee_instance.department:
-            await departments_collection.update_one(
-                {"name": employee_instance.department},
-                {
-                    "$push": {"staffs": employee_instance.employee_id},
-                    "$inc": {"staff_size": 1}
-                }
-            )
+        # if employee_instance.department:
+        #     await departments_collection.update_one(
+        #         {"name": employee_instance.department},
+        #         {
+        #             "$push": {"staffs": employee_instance.employee_id},
+        #             "$inc": {"staff_size": 1}
+        #         }
+        #     )
+
 
         # Update company staff size
         await companies_collection.update_one(
@@ -586,7 +652,7 @@ async def create_employee_profile(employee_request: CreateEmployee, company_id: 
         await log_admin_activity(admin_id=str(user["_id"]), type="create_employee", action=f"Created {employee_instance.first_name} profile", status="success")
 
         # Return success response
-        data = {"employee_id": employee_instance.employee_id, "password": employee_pwd}
+        data = {"email": employee_instance.email, "password": employee_pwd}
         return {"message": "Employee account created successfully", "data": data}
 
     except Exception as e:

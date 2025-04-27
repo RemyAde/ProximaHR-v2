@@ -19,6 +19,7 @@ class CreateEmployee(BaseModel):
     job_title: Optional[str] = None
     role: Optional[str] = None
     employment_date: Optional[date] = None
+    department: Optional[str] = None
     work_mode: Optional[str] = None
     work_location: Optional[str] = None
     working_hours: Optional[int] = 0
@@ -53,6 +54,7 @@ class EditEmployee(BaseModel):
    job_title: Optional[str] = None
    role: Optional[str] = None
    employment_date: Optional[date] = None
+   department: Optional[str] = None
    work_mode: Optional[str] = None
    work_location: Optional[str] = None
    working_hours: Optional[int] = 0
