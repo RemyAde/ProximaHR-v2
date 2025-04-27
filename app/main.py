@@ -44,8 +44,7 @@ app.include_router(notifications.router, prefix="/notifications", tags=["notific
 app.add_middleware(
     CORSMiddleware,
     allow_origins = [
-        "https://hrm-project-rosy.vercel.app",
-        "https://masterhrmproject.vercel.app",
+        "https://proximia.vercel.app/",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
