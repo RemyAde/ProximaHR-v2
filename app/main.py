@@ -72,8 +72,8 @@ if __name__ == "__main__":
 
     if PROD_MODE == True:
     # Run Uvicorn without reload in production
-        uvicorn.run("main:app", host="0.0.0.0", port=11000, reload=False)
+        uvicorn.run("main:app", host="0.0.0.0", port=11100, reload=False)
 
     else:
         # Run Uvicorn with reload=True in development mode
-        uvicorn.run("main:app", host="0.0.0.0", port=11000, reload=True)
+        uvicorn.run("main:app", host="0.0.0.0", port=11100, reload=True)
