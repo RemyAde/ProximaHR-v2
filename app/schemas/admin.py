@@ -8,7 +8,6 @@ class CreateAdmin(BaseModel):
     last_name: str
     email: EmailStr
     password: str
-    admin_code: str
 
 
 class EmailInput(BaseModel):

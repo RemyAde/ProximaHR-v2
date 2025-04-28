@@ -22,7 +22,7 @@ def generate_code():
 
 
 @router.post("/register_company")
-async def register_company(company: CompanyCreate, background_tasks: BackgroundTasks):
+async def register_company(company: CompanyCreate):
     """
     Register a new company in the system.
     This function handles the registration of a new company by:
@@ -56,11 +56,8 @@ async def register_company(company: CompanyCreate, background_tasks: BackgroundT
         })
     if existing_company:
         raise HTTPException(status_code=400, detail="Company already registered")
-    
-    admin_code = generate_code()
 
     company_obj_dict = company.model_dump(exclude_unset=True)
-    company_obj_dict["admin_creation_code"] = admin_code
 
     company_instance = Company(**company_obj_dict)
 
@@ -70,11 +67,6 @@ async def register_company(company: CompanyCreate, background_tasks: BackgroundT
         {"registration_number": company.registration_number},
         {"$set": {"company_url": f"login/{company.registration_number}"}}
     )
-
-    email_subject = "Admin Creation Code"
-    email_message = f"Your admin creation code is: {admin_code}. Use this to create your first admin account"
-
-    await send_verification_code(email=company.email, subject=email_subject, message=email_message, background_tasks=background_tasks)
 
     data = [
         {"company_name": company.name,

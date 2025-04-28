@@ -53,9 +53,6 @@ async def create_admin(admin_obj: CreateAdmin, company_id: str):
     if existing_admin:
         raise HTTPException(status_code=400, detail="Admin already registered")
     
-    if company["admin_creation_code"] != admin_obj.admin_code:
-        raise HTTPException(status_code=401, detail="Invalid admin creation code")
-    
     if len(company.get("admin", [])) >= 1:
         raise HTTPException(status_code=400, detail="Admin limit reached")
 
