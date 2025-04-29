@@ -6,7 +6,4 @@ class Company(BaseModel):
     name: str
     email: EmailStr
     industry: str
-    country: str
-    state: str
-    town: str
     
