@@ -1,7 +1,8 @@
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from datetime import datetime, timezone, timedelta
 from pymongo import ASCENDING
-from db import employees_collection, companies_collection
+from db import employees_collection, companies_collection, departments_collection
 from utils.app_utils import get_current_user
 
 router = APIRouter()
@@ -384,7 +385,12 @@ async def get_employees(
         }
 
         if department:
-            query_filter["department"] = {"$regex": f"^{department}$", "$options": "i"}
+            department_obj = await departments_collection.find_one({"name": {"$regex": f"^{department}$", "$options": "i"}})
+            if department_obj:
+                query_filter["department"] = str(department_obj["_id"])
+            else:
+                # If department doesn't exist, return an empty list
+                return {"employees_data": []}
 
         if name:
             query_filter["$or"] = [
@@ -428,13 +434,21 @@ async def get_employees(
         employees_data = []
         
         for employee in employees_list:
+            department_id = employee.get("department")
+            try:
+                department = await departments_collection.find_one({"_id": ObjectId(department_id)}) if department_id else None
+                department_name = department.get("name") if department else None
+            except Exception as e:
+                department_name = employee.get("department", "")
+                
             data = {
                 "name": f"{employee['first_name']} {employee['last_name']}",
-                "department": employee.get("department", ""),
+                "department": department_name,
                 "base_salary": employee.get("base_salary", ""),
                 "deductions": employee.get("paye_deduction", 0) + employee.get("employee_contribution", 0),
                 "net_pay": employee.get("net_pay", ""),
-                "payment_status": employee.get("payment_status", "")
+                "payment_status": employee.get("payment_status", ""),
+                "employee_contribution": employee.get("employee_contribution", 0),
             }
 
             # Include allowances if requested
