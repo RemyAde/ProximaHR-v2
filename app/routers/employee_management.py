@@ -139,22 +139,6 @@ async def get_employee_details(
     employee_id: str, 
     user_and_type: tuple = Depends(get_current_user)
 ):
-    """
-    Fetch detailed information for a specific employee.
-    This endpoint retrieves comprehensive details of an employee, accessible only by admin
-    or HR users within the same company.
-    Args:
-        employee_id (str): The unique identifier of the employee.
-        company_id (str): The registration number of the company.
-        user_and_type (tuple): A tuple containing the current user and their type (from dependency).
-    Returns:
-        dict: A dictionary containing the employee data with sensitive fields excluded.
-            Format: {"data": serialized_employee_dict}
-    Raises:
-        HTTPException (404): If the company or employee is not found.
-        HTTPException (403): If the user is not authorized (not admin or HR).
-        HTTPException (401): If the user is not from the same company.
-    """
     user, user_type = user_and_type
     company_id = user.get("company_id")
 
@@ -169,7 +153,7 @@ async def get_employee_details(
         )
     
     # Fetch employee from database
-    employee = await employees_collection.find_one({"employee_id": employee_id, "company_id": company_id}) #ensure only company employee is accessible
+    employee = await employees_collection.find_one({"employee_id": employee_id, "company_id": company_id})
     if not employee:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, 
@@ -177,17 +161,66 @@ async def get_employee_details(
         )
     
     department_id = employee.get("department")
+    hod_first_name = None
+    hod_last_name = None
     try:
         department = await departments_collection.find_one({"_id": ObjectId(department_id)}) if department_id else None
         department_name = department.get("name") if department else None
         employee["department"] = department_name
+
+        # --- Add HOD info if available ---
+        if department and department.get("hod"):
+            hod = await employees_collection.find_one({"employee_id": department["hod"], "company_id": company_id})
+            if hod:
+                hod_first_name = hod.get("first_name")
+                hod_last_name = hod.get("last_name")
     except Exception as e:
         employee["department"] = employee.get("department", "")
-    
+
     # Serialize and omit fields
     serialized_employee = Employee(**employee).model_dump(exclude={"company_id", "password", "date_created"})
 
-    return {"data": serialized_employee}
+    return {"data": serialized_employee, "hod_details": {"first_name": hod_first_name, "last_name": hod_last_name}}
+
+
+@router.get("/employee/{employee_id}/leave-history")
+async def get_employee_leave_history(
+    employee_id: str,
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Returns up to 4 most recent leave records for the specified employee.
+    Only admins and HR can access this endpoint.
+    """
+    from db import leaves_collection  # Import here to avoid circular import if needed
+
+    user, user_type = user_and_type
+    company_id = user.get("company_id")
+
+    if user_type not in ["admin", "hr"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized user!")
+
+    # Ensure the employee exists and belongs to the company
+    employee = await employees_collection.find_one({"employee_id": employee_id, "company_id": company_id})
+    if not employee:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found.")
+
+    # Query the leaves collection for this employee, most recent first
+    leaves_cursor = leaves_collection.find(
+        {"employee_id": employee_id, "company_id": company_id}
+    ).sort("start_date", -1).limit(4)
+    recent_leaves = await leaves_cursor.to_list(length=4)
+
+    # Convert ObjectId fields to strings for JSON serialization
+    for leave in recent_leaves:
+        if "_id" in leave:
+            leave["_id"] = str(leave["_id"])
+        # If there are other ObjectId fields, convert them as well
+        for key, value in leave.items():
+            if isinstance(value, ObjectId):
+                leave[key] = str(value)
+
+    return {"employee_id": employee_id, "leave_history": recent_leaves}
 
 
 @router.post("/create-employee-profile")
