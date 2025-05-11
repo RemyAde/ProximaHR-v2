@@ -68,23 +68,27 @@ def create_access_token(payload: Dict[str, Any], expiry: timedelta):
     return encoded_data
 
 
-async def authenticate_user(pk: str, password: str):
+async def authenticate_user(pk: str, password: str, user_type: str):
     """
-    authenticates user
-    args:-
+    Authenticates user based on user_type.
+    Args:
         - pk: primary key (email for admin and for employees)
         - password: password
+        - user_type: 'admin' or 'employee'
     """
     is_valid_email = "@" in pk and "." in pk
     if not is_valid_email:
         return False
-    
-    user = await admins_collection.find_one({"email": pk})
-    if not user:
+
+    user = None
+    if user_type == "admin":
+        user = await admins_collection.find_one({"email": pk})
+    elif user_type == "employee":
         user = await employees_collection.find_one({"email": pk})
-        if not user:
-            return False
-    
+
+    if not user:
+        return False
+
     hashed_password = user["password"]
     if not verify_password(plain_password=password, hashed_password=hashed_password):
         return False

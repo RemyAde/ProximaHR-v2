@@ -79,24 +79,30 @@ async def register_company(company: CompanyCreate):
 
 
 @router.post("/login", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(),
+                                 user_type: str = Query(..., regex="^(admin|employee)$")
+                                 ):
     """
-    Get an access token for a user.
-    This function handles the login of a user by:
-    1. Authenticating the user with the provided username and password
-    2. Creating an access token for the user
+    Handles user authentication and generates JWT access token.
+    This endpoint validates user credentials and issues a JWT token for authenticated sessions.
     Args:
-        form_data (OAuth2PasswordRequestForm): Pydantic model containing username and password
+        form_data (OAuth2PasswordRequestForm): Form containing username (email) and password
+        user_type (str): Type of user - must be either 'admin' or 'employee'
     Returns:
-        dict: A dictionary containing:
-            - access_token (str): JWT access token
-            - token_type (str): Token type
+        dict: Contains the generated access token and token type
+            {
+                "access_token": str,
+                "token_type": "bearer"
+            }
     Raises:
-        HTTPException: 401 status code if invalid login details
+        HTTPException: 401 Unauthorized if login credentials are invalid
     Example:
-        result = await login_for_access_token("admin", "12345", form_data)
+        >>> response = await login_for_access_token(form_data, "employee")
+        >>> print(response)
+        {"access_token": "eyJ0eXAiOiJKV1QiLC...", "token_type": "bearer"}
     """
-    user = await authenticate_user(pk=form_data.username, password=form_data.password)
+    
+    user = await authenticate_user(pk=form_data.username, password=form_data.password, user_type=user_type)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
