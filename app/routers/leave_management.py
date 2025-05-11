@@ -1,30 +1,77 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status, Depends, Query
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional
 from bson import ObjectId
 from db import leaves_collection, employees_collection
 from schemas.notification import NotificationType
+from schemas.leave import LeaveTypeSummary, LeavesCount, LeaveList
 from utils.app_utils import get_current_user
 from utils.notification_utils import create_leave_notification
 from utils.activity_utils import log_admin_activity
-from exceptions import get_user_exception
+from utils.leave_utils import get_leave_type_counts_for_year, get_monthly_leave_distribution
+from db import departments_collection
 
 UTC = timezone.utc
 
 router = APIRouter()
 
 
-class LeaveList(BaseModel):
-    leave_count: int
-    pending_leave_count: int
-    approved_leave_count: int
-    rejected_leave_count: int
-    leave_data: List = Field(
-        ...,
-        description="list of dictionaries"
-        )
+@router.get("/health")
+async def health_check():
+    """
+    Health check endpoint to verify if the service is running.
+    Returns:
+        dict: A simple message indicating the service is running.
+    """
+    return {"message": "Leave Management Service is running"}
 
+
+@router.get("/leaves-count", response_model=LeavesCount)
+async def get_leaves_count(
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Get leave counts for a given company.
+    This async function retrieves the total number of leaves and their statuses for a specific company.
+    Args:
+        user_and_type (tuple): Tuple containing user object and user type from authentication
+    Returns:
+        dict: A dictionary containing:
+            - leave_count (int): Total number of leaves
+            - pending_leave_count (int): Number of pending leaves
+            - approved_leave_count (int): Number of approved leaves
+            - rejected_leave_count (int): Number of rejected leaves
+    Raises:
+        HTTPException: 
+            - 403: If user is not an admin
+            - 401: If company_id doesn't match user's company
+            - 400: For any other errors during execution
+    """
+    user, user_type = user_and_type
+
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this function")
+
+    company_id = str(user.get("company_id"))
+    if not company_id:
+        raise HTTPException(status_code=401, detail="Company ID not found in user data")
+
+    try:
+        leave_count = await leaves_collection.count_documents({"company_id": company_id})
+        pending_leave_count = await leaves_collection.count_documents({"company_id": company_id, "status": "pending"})
+        approved_leave_count = await leaves_collection.count_documents({"company_id": company_id, "status": "approved"})
+        rejected_leave_count = await leaves_collection.count_documents({"company_id": company_id, "status": "rejected"})
+
+        return {
+            "leave_count": leave_count,
+            "pending_leave_count": pending_leave_count,
+            "approved_leave_count": approved_leave_count,
+            "rejected_leave_count": rejected_leave_count,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"An error occurred - {e}")
+    
 
 @router.get("/", status_code=status.HTTP_200_OK, response_model=LeaveList)
 async def list_leaves(
@@ -73,12 +120,6 @@ async def list_leaves(
         leave_data = []
         employee_details = {}
 
-        # Always calculate total counts for all statuses
-        leave_count = await leaves_collection.count_documents({"company_id": company_id})
-        pending_leave_count = await leaves_collection.count_documents({"company_id": company_id, "status": "pending"})
-        approved_leave_count = await leaves_collection.count_documents({"company_id": company_id, "status": "approved"})
-        rejected_leave_count = await leaves_collection.count_documents({"company_id": company_id, "status": "rejected"})
-
         # Build the filter for the query based on status
         query = {"company_id": company_id}
         if status:
@@ -94,9 +135,19 @@ async def list_leaves(
                 employee_filter = {"employee_id": leave["employee_id"]}
                 employee = await employees_collection.find_one(employee_filter)
                 if employee:
+                    # Fetch department name if department is an ObjectId or id
+                    department_name = None
+                    department = employee.get("department")
+                    if department:
+                        # If department is an ObjectId or string id, fetch department name from departments_collection
+                        department_doc = await departments_collection.find_one({"_id": department}) if isinstance(department, ObjectId) else await departments_collection.find_one({"_id": ObjectId(department)})
+                        if department_doc:
+                            department_name = department_doc.get("name", department)
+                        else:
+                            department_name = department  # fallback to id if not found
                     employee_details = {
                         "name": f"{employee.get('first_name')} {employee.get('last_name')}",
-                        "department": employee.get("department")
+                        "department": department_name
                     }
 
             leave_data.append({
@@ -110,10 +161,6 @@ async def list_leaves(
             })
 
         return {
-            "leave_count": leave_count,
-            "pending_leave_count": pending_leave_count,
-            "approved_leave_count": approved_leave_count,
-            "rejected_leave_count": rejected_leave_count,
             "leave_data": leave_data,
             "skip": skip,
             "limit": limit,
@@ -304,3 +351,31 @@ async def reject_leave(leave_id: str, user_and_type: tuple = Depends(get_current
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail=f"An error occurred: {e}"
         )
+
+@router.get("/leave-type-distribution", response_model=LeaveTypeSummary)
+async def leave_type_distribution(
+    year: Optional[int] = Query(datetime.now().year, description="Year to summarize (default: current year)"),
+    user_and_type: tuple = Depends(get_current_user)
+):
+    """
+    Returns the total amount of leaves taken for each leave type in the specified year for the admin's company.
+    Only accessible by admin users.
+    """
+    user, user_type = user_and_type
+    if user_type != "admin":
+        raise HTTPException(status_code=403, detail="You are not authorized to perform this function")
+    company_id = str(user["company_id"])
+    if not company_id:
+        raise HTTPException(status_code=401, detail="Company ID not found in user data")
+    leave_type_counts = await get_leave_type_counts_for_year(company_id, year)
+    return {"leave_type_counts": leave_type_counts, "year": year}
+
+
+@router.get("/monthly-leave-distribution")
+async def monthly_leave_distribution(user_and_type: tuple = Depends(get_current_user)):
+    user, _ = user_and_type
+    company_id = user["company_id"]
+
+    distribution = await get_monthly_leave_distribution(company_id)
+
+    return {"data": distribution}
