@@ -218,7 +218,8 @@ async def leave_overview(user_and_type: tuple = Depends(get_current_user)):
         data = {
             "pending_leaves": 0,
             "monthly_approved_leaves": 0,
-            "leave_approval_rate": 0.0
+            "leave_approval_rate": 0.0,
+            "first_upcoming_leave": None
         }
 
         company = await companies_collection.find_one({"registration_number": company_id})
@@ -262,6 +263,31 @@ async def leave_overview(user_and_type: tuple = Depends(get_current_user)):
             "monthly_approved_leaves": monthly_approved,
             "leave_approval_rate": approval_rate
         })
+
+        try:
+            first_upcoming_leave = await leaves_collection.find_one(
+                {
+                    "company_id": user["company_id"],
+                    "status": "approved",
+                    "start_date": {"$gte": datetime.now(UTC)}
+                },
+                sort=[("start_date", 1)]
+            )
+            if first_upcoming_leave:
+                # Convert ObjectId and datetime fields to string for serialization
+                first_upcoming_leave["_id"] = str(first_upcoming_leave["_id"])
+
+                if "start_date" in first_upcoming_leave:
+                    first_upcoming_leave["start_date"] = first_upcoming_leave["start_date"].isoformat()
+
+                if "end_date" in first_upcoming_leave:
+                    first_upcoming_leave["end_date"] = first_upcoming_leave["end_date"].isoformat()
+                # Add the date (start_date) to the data being returned
+                data["first_upcoming_leave"] = first_upcoming_leave.get("start_date")
+            else:
+                data["first_upcoming_leave"] = None
+        except Exception:
+            data["first_upcoming_leave"] = None
 
         return data
 
