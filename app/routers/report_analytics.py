@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from pytz import UTC
 from fastapi import APIRouter, Depends, HTTPException, Query
-from db import employees_collection, timer_logs_collection, leaves_collection, payroll_collection
+from db import employees_collection, timer_logs_collection, leaves_collection, payroll_collection, departments_collection
 from utils.app_utils import get_current_user
 from utils.report_analytics_utils import (calculate_attendance_trend, calculate_department_attendance_percentage, 
                                     calculate_leave_utilization_trend, calculate_payroll_trend, 
@@ -223,7 +223,7 @@ async def get_workforce_growth_and_trend(user_and_type: tuple = Depends(get_curr
 
 
 @router.get("/overtime-by-department-by-month", response_model=dict)
-async def get_overtime_by_department(
+async def get_overtime_by_department(   
     year: int = Query(None, description="Filter overtime hours for a specific year (e.g., 2024)"),
     user_and_type: tuple = Depends(get_current_user)
 ):
@@ -446,7 +446,6 @@ async def get_department_attendance_summary(
     """
     Endpoint to get attendance summary for each department.
     """
-
     user, user_type = user_and_type
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Only admins can access this data.")
@@ -457,22 +456,38 @@ async def get_department_attendance_summary(
         result = await calculate_attendance_for_department(month=month, year=year, company_id=company_id)
         attendance_percentage = await calculate_department_attendance_percentage(company_id=company_id)
 
-        # If both results are found, merge them
-        if result and attendance_percentage:
-            for department, summary in result.items():
-                # Find the matching department's attendance percentage
-                matching_percentage = next(
-                    (item["attendance_percentage"] for item in attendance_percentage if item["department"] == department),
-                    None
-                )
-                # Add the attendance percentage to the relevant department summary
-                summary["attendance_percentage"] = matching_percentage if matching_percentage is not None else 0.0
+        # --- NEW: Fetch department id-name mapping ---
+        dept_docs = await departments_collection.find({"company_id": company_id}).to_list(length=None)
+        dept_id_to_name = {}
+        for dept in dept_docs:
+            # Support both ObjectId and string id
+            dept_id_to_name[str(dept["_id"])] = dept.get("name", str(dept["_id"]))
 
-            return {"data": result}
+        def get_dept_name(dept_key):
+            # If it's already a name, return as is; if id, map to name
+            return dept_id_to_name.get(str(dept_key), dept_key)
 
-        # Return 404 when no data is found
+        # --- Remap result keys to department names ---
+        remapped_result = {}
+        for dept_key, summary in result.items():
+            dept_name = get_dept_name(dept_key)
+            remapped_result[dept_name] = summary
+
+        # Remap attendance_percentage as well
+        remapped_attendance_percentage = {}
+        for dept_key, percent in attendance_percentage.items():
+            dept_name = get_dept_name(dept_key)
+            remapped_attendance_percentage[dept_name] = percent
+
+        # Merge attendance_percentage into remapped_result
+        for dept_name, summary in remapped_result.items():
+            summary["attendance_percentage"] = remapped_attendance_percentage.get(dept_name, 0.0)
+
+        if remapped_result:
+            return {"data": remapped_result}
+
         return {"message": "No attendance data found for the given month and year", "data": []}
 
     except Exception as e:
         print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="An error occurred while processing the request")
+        raise HTTPException(status_code=400, detail=f"An error occurred while processing the request - {e}")
