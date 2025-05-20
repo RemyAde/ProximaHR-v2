@@ -26,6 +26,134 @@ async def get_ideal_monthly_hours(weekly_workdays: int, working_hours: int, mont
     return weekdays * working_hours
 
 
+async def calculate_department_metrics(company_id: str, month: int, year: int):
+    """Return for each department: total working days, present days, leave days, undertime hours, overtime hours, total hours worked, and average attendance rate."""
+    try:
+        start_of_month = datetime(year, month, 1, tzinfo=UTC)
+        end_of_month = datetime(year, month, monthrange(year, month)[1], tzinfo=UTC)
+
+        # Fetch all employees for the company
+        employees = await employees_collection.find({"company_id": company_id, "employment_status": "active"}).to_list(length=None)
+        if not employees:
+            raise ValueError("No employees found for the company.")
+
+        # Fetch all departments for mapping
+        departments = await departments_collection.find({"company_id": company_id}).to_list(length=None)
+        id_to_name = {str(dept["_id"]): dept["name"] for dept in departments}
+        name_to_name = {dept["name"]: dept["name"] for dept in departments}
+
+        # Prepare department summary
+        department_summary = {}
+
+        for employee in employees:
+            raw_dept = employee.get("department")
+            dept_name = (
+                id_to_name.get(str(raw_dept)) or
+                name_to_name.get(str(raw_dept)) or
+                str(raw_dept) or
+                "Unknown Department"
+            )
+            weekly_workdays = int(employee.get("weekly_workdays", 5))
+            working_hours = float(employee.get("working_hours", 8))
+            if dept_name not in department_summary:
+                department_summary[dept_name] = {
+                    "total_working_days": 0,
+                    "present_days": 0,
+                    "leave_days": 0,
+                    "undertime_hours": 0.0,
+                    "overtime_hours": 0.0,
+                    "total_hours_logged": 0.0,
+                    "attendance_rates": []
+                }
+
+            # Calculate working days for this employee in the month (weekdays only)
+            start_date = datetime(year, month, 1, tzinfo=UTC)
+            end_date = datetime(year, month, monthrange(year, month)[1], tzinfo=UTC)
+            today = datetime.now(UTC).date()
+            total_working_days = 0
+            dates_in_month = []
+            current_date = start_date
+            while current_date <= end_date:
+                if current_date.weekday() < weekly_workdays:
+                    # If current month, only process up to today
+                    if year == today.year and month == today.month and current_date.date() > today:
+                        break
+                    total_working_days += 1
+                    dates_in_month.append(current_date.date())
+                current_date += timedelta(days=1)
+            department_summary[dept_name]["total_working_days"] += total_working_days
+
+            # Fetch approved leaves for the employee for the month
+            leaves = await leaves_collection.find({
+                "company_id": company_id,
+                "employee_id": employee.get("employee_id"),
+                "status": "approved",
+                "start_date": {"$lte": end_of_month},
+                "end_date": {"$gte": start_of_month}
+            }).to_list(length=None)
+            leave_dates = set()
+            for leave in leaves:
+                leave_start = leave["start_date"].date()
+                leave_end = leave["end_date"].date()
+                leave_dates.update((leave_start + timedelta(days=i)) for i in range((leave_end - leave_start).days + 1))
+
+            # Fetch attendance logs for the employee for the month
+            logs = await timer_logs_collection.find({
+                "company_id": company_id,
+                "employee_id": employee.get("employee_id"),
+                "date": {"$gte": start_of_month, "$lte": end_of_month}
+            }).to_list(length=None)
+            logs_by_date = {log["date"].date(): log for log in logs}
+
+            present_days = 0
+            leave_days = 0
+            undertime_hours = 0.0
+            overtime_hours = 0.0
+            total_hours_worked = 0.0
+            attendance_days = 0
+
+            for day in dates_in_month:
+                if day in leave_dates:
+                    leave_days += 1
+                    continue
+                log = logs_by_date.get(day)
+                if log:
+                    start_time = log.get("start_time")
+                    end_time = log.get("end_time")
+                    hours_worked = (end_time - start_time).total_seconds() / 3600 if start_time and end_time else 0.0
+                    total_hours_worked += hours_worked
+                    if hours_worked >= 0.9 * working_hours:
+                        present_days += 1
+                        attendance_days += 1
+                    elif working_hours > hours_worked >= 0.4 * working_hours:
+                        undertime_hours += working_hours - hours_worked
+                        attendance_days += 1
+                    if hours_worked > working_hours:
+                        overtime_hours += hours_worked - working_hours
+                # If no log and not on leave, count as absent (not present, not leave, not undertime, not overtime)
+                # No increment for present_days, undertime_hours, or overtime_hours
+
+            # Calculate attendance rate for this employee (present_days / (working_days - leave_days))
+            effective_days = total_working_days - leave_days
+            attendance_rate = (present_days / effective_days) * 100 if effective_days > 0 else 0
+            department_summary[dept_name]["present_days"] += present_days
+            department_summary[dept_name]["leave_days"] += leave_days
+            department_summary[dept_name]["undertime_hours"] += round(undertime_hours, 2)
+            department_summary[dept_name]["overtime_hours"] += round(overtime_hours, 2)
+            department_summary[dept_name]["total_hours_logged"] += round(total_hours_worked, 2)
+            department_summary[dept_name]["attendance_rates"].append(attendance_rate)
+
+        # Finalize: average attendance rate per department
+        for dept_name, summary in department_summary.items():
+            rates = summary.pop("attendance_rates")
+            summary["attendance_rate"] = round(sum(rates) / len(rates), 2) if rates else 0.0
+
+        return department_summary
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
 async def calculate_company_metrics(company_id: str, month: int, year: int):
     """Calculate average attendance rate, total hours logged, total overtime hours, and total undertime hours for the company."""
     try:
@@ -56,6 +184,142 @@ async def calculate_company_metrics(company_id: str, month: int, year: int):
         raise HTTPException(status_code=500, detail=str(e))
     
 
+async def get_monthly_attendance_with_times(employee_id: str, company_id: str, month: int, year: int):
+    """Retrieve monthly attendance record with clock-in and clock-out times for a specific employee."""
+    try:
+        start_date = datetime(year, month, 1, tzinfo=UTC)
+        end_date = datetime(year, month, monthrange(year, month)[1], tzinfo=UTC)
+
+        # Fetch approved leaves for the employee
+        leaves = await leaves_collection.find({
+            "company_id": company_id, 
+            "employee_id": employee_id,
+            "status": "approved",
+            "start_date": {"$lte": end_date},
+            "end_date": {"$gte": start_date}
+        }).to_list(length=None)
+
+        leave_dates = set()
+        for leave in leaves:
+            leave_start = leave["start_date"].date()
+            leave_end = leave["end_date"].date()
+            leave_dates.update((leave_start + timedelta(days=i)) for i in range((leave_end - leave_start).days + 1))
+
+        # Fetch attendance logs for the month
+        attendance_logs = await timer_logs_collection.find({
+            "company_id": company_id,
+            "employee_id": employee_id,
+            "date": {"$gte": start_date, "$lte": end_date}
+        }).to_list(length=None)
+
+        logs_by_date = {log["date"].date(): log for log in attendance_logs}
+
+        # Get working hours for the employee
+        employee = await employees_collection.find_one({"employee_id": employee_id})
+        working_hours = employee.get("working_hours", 8)
+
+        # Generate attendance records
+        summary = []
+        current_date = start_date
+        total_leave_days = 0
+        total_absences = 0
+        total_undertimes = 0
+        total_presents = 0
+
+        while current_date <= end_date:
+            current_day = current_date.date()
+            is_leave_day = current_day in leave_dates
+
+            # Determine attendance status
+            if is_leave_day:
+                attendance_status = "on_leave"
+                total_leave_days += 1
+                hours_worked = 0
+                overtime = 0
+                undertime = 0
+                absent = 0
+                clock_in = None
+                clock_out = None
+            else:
+                log = logs_by_date.get(current_day)
+                if log:
+                    start_time = log.get("start_time")
+                    end_time = log.get("end_time")
+                    hours_worked = (end_time - start_time).total_seconds() / 3600 if start_time and end_time else 0
+                    overtime = 1 if hours_worked > working_hours else 0
+                    undertime = 1 if working_hours > hours_worked >= 0.4 * working_hours else 0
+                    absent = 1 if hours_worked < 0.4 * working_hours else 0
+                    clock_in = start_time
+                    clock_out = end_time
+
+                    if hours_worked >= 0.9 * working_hours:
+                        attendance_status = "present"
+                        total_presents += 1
+                    elif undertime:
+                        attendance_status = "undertime"
+                        total_undertimes += 1
+                    elif absent:
+                        attendance_status = "absent"
+                        total_absences += 1
+                else:
+                    # No log means absent
+                    hours_worked = 0
+                    overtime = 0
+                    undertime = 0
+                    absent = 1
+                    attendance_status = "absent"
+                    total_absences += 1
+                    clock_in = None
+                    clock_out = None
+
+            # Add attendance record
+            summary.append({
+                "date": current_day,
+                "attendance_status": attendance_status,
+                "hours_worked": round(hours_worked, 2),
+                "overtime": overtime,
+                "undertime": undertime,
+                "absent": absent,
+                "clock_in": clock_in,
+                "clock_out": clock_out
+            })
+
+            current_date += timedelta(days=1)
+
+        # Return detailed attendance and summary counts
+        return {
+            "attendance_summary": summary,
+            "totals": {
+                "leave_days": total_leave_days,
+                "absences": total_absences,
+                "undertimes": total_undertimes,
+                "presents": total_presents,
+            }
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def calculate_employee_metrics(employee_id: str, company_id: str, month: int, year: int):
+    """Calculate attendance rate, total overtime hours, undertime hours, and total absences for an employee."""
+    try:
+        attendance_data = await get_monthly_attendance_with_times(employee_id, company_id, month, year)
+        totals = attendance_data["totals"]
+
+        total_working_days = totals["presents"] + totals["absences"] + totals["undertimes"]
+        attendance_rate = (totals["presents"] / total_working_days) * 100 if total_working_days > 0 else 0
+
+        return {
+            "attendance_rate": attendance_rate,
+            "total_overtime_hours": sum(record["hours_worked"] - 8 for record in attendance_data["attendance_summary"] if record["overtime"]),
+            "total_undertime_hours": sum(8 - record["hours_worked"] for record in attendance_data["attendance_summary"] if record["undertime"]),
+            "total_absences": totals["absences"]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def list_employee_attendance_records(company_id: str, month: int, year: int, department: str = None):
     """List attendance records for employees of the selected company, optionally filtered by department."""
     try:
@@ -64,125 +328,48 @@ async def list_employee_attendance_records(company_id: str, month: int, year: in
 
         # Fetch employees for the company, optionally filtered by department
         employee_query = {"company_id": company_id, "employment_status": "active"}
-        
+
         # Fetch department details
-        departments = await departments_collection.find().to_list(length=None)
+        departments = await departments_collection.find({"company_id": company_id}).to_list(length=None)
         department_name_to_id = {dept["name"].lower(): str(dept["_id"]) for dept in departments}
 
         if department:
             # Check if department is an ID or name
             if department.lower() in department_name_to_id:
                 # If it's a name, convert to ID
-                employee_query["department"] = department_name_to_id[department]
+                employee_query["department"] = department_name_to_id[department.lower()]
             else:
                 # If not a name, assume it's an ID
                 employee_query["department"] = department
 
         employees = await employees_collection.find(employee_query).to_list(length=None)
         if not employees:
-            raise ValueError("No employees found for the company.")
-
-        logs_query = {
-            "company_id": company_id,
-            "date": {"$gte": start_of_month, "$lte": end_of_month}
-        }
-        logs = await timer_logs_collection.find(logs_query).to_list(length=None)
-
-        logs_by_date = {}
-        for log in logs:
-            logs_by_date.setdefault(log["employee_id"], {})[log["date"].date()] = log
+            return []  # Return empty list, don't raise exception
 
         employee_records = []
 
         for employee in employees:
-            employee_id = employee["_id"]
+            employee_id = employee["employee_id"]
             first_name = employee["first_name"]
             last_name = employee["last_name"]
-            weekly_workdays = employee.get("weekly_workdays", 5)
-            working_hours = employee.get("working_hours", 8)
 
-            total_working_days = 0
-            present_days = 0
-            absent_days = 0
-            leave_days = 0
-            undertime_hours = 0
-            overtime_hours = 0
-            total_hours_logged = 0
-
-            start_date = datetime(year, month, 1)
-            end_date = datetime(year, month + 1, 1) - timedelta(days=1)
-            current_date = start_date
-
-            # Fetch approved leaves for the employee for the month
-            leaves = await leaves_collection.find({
-                "company_id": company_id,
-                "employee_id": employee_id,
-                "status": "approved",
-                "start_date": {"$lte": end_of_month},
-                "end_date": {"$gte": start_of_month}
-            }).to_list(length=None)
-
-            leave_dates = set()
-            for leave in leaves:
-                leave_start = leave["start_date"].date()
-                leave_end = leave["end_date"].date()
-                leave_dates.update((leave_start + timedelta(days=i)) for i in range((leave_end - leave_start).days + 1))
-
-            while current_date <= end_date:
-                if current_date.weekday() < weekly_workdays:
-                    total_working_days += 1
-                current_date += timedelta(days=1)
-
-            current_date = start_date
-            while current_date <= end_date:
-                current_day = current_date.date()
-                if current_day in leave_dates:
-                    leave_days += 1
-                else:
-                    log = logs_by_date.get(employee_id, {}).get(current_day)
-                    if log:
-                        start_time = log.get("start_time")
-                        end_time = log.get("end_time")
-                        hours_worked = (end_time - start_time).total_seconds() / 3600 if start_time and end_time else 0
-                        undertime = hours_worked < working_hours
-                        overtime = hours_worked > working_hours
-
-                        if hours_worked >= 0.4 * working_hours:
-                            present_days += 1
-                        else:
-                            absent_days += 1
-
-                        if undertime:
-                            undertime_hours += working_hours - hours_worked
-                        if overtime:
-                            overtime_hours += hours_worked - working_hours
-
-                        total_hours_logged += hours_worked
-                    else:
-                        absent_days += 1
-
-                current_date += timedelta(days=1)
-
-            # Exclude leave days from denominator for attendance percentage
-            effective_working_days = total_working_days - leave_days
-            attendance_percentage = (present_days / effective_working_days) * 100 if effective_working_days > 0 else 0
+            # Use calculate_employee_metrics to get accurate metrics
+            metrics = await calculate_employee_metrics(employee_id, company_id, month, year)
 
             employee_records.append({
+                "employee_id": employee_id,
                 "first_name": first_name,
                 "last_name": last_name,
-                "attendance_percentage": attendance_percentage,
-                "overtime_hours": overtime_hours,
-                "undertime_hours": undertime_hours,
-                "absences": absent_days,
-                "leave_days": leave_days,
-                "total_hours_logged": total_hours_logged
+                "attendance_percentage": metrics["attendance_rate"],
+                "overtime_hours": metrics["total_overtime_hours"],
+                "undertime_hours": metrics["total_undertime_hours"],
+                "absences": metrics["total_absences"]
             })
 
         return employee_records
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+        
 
 async def get_monthly_attendance_with_times(employee_id: str, company_id: str, month: int, year: int):
     """Retrieve monthly attendance record with clock-in and clock-out times for a specific employee."""
@@ -475,135 +662,3 @@ async def get_employee_monthly_report(employee: dict, month: int, year: int) -> 
         "net_pay": employee.get("net_pay", 0),
         "total_overtime_hours": attendance_data["total_overtime_hours"]
     }
-
-
-async def calculate_department_metrics(company_id: str, month: int, year: int):
-    """Calculate attendance rate, total overtime hours, total undertime hours, total absences, and total hours logged for each department."""
-    try:
-        # Define the start and end of the month
-        start_of_month = datetime(year, month, 1, tzinfo=UTC)
-        end_of_month = datetime(year, month, monthrange(year, month)[1], tzinfo=UTC)
-
-        # Fetch all employees for the company
-        employees = await employees_collection.find({"company_id": company_id, "employment_status": "active"}).to_list(length=None)
-        if not employees:
-            raise ValueError("No employees found for the company.")
-
-        # Fetch all departments for mapping
-        departments = await departments_collection.find({"company_id": company_id}).to_list(length=None)
-        id_to_name = {str(dept["_id"]): dept["name"] for dept in departments}
-        name_to_name = {dept["name"]: dept["name"] for dept in departments}
-
-        # Fetch attendance logs for the month and company
-        logs_query = {
-            "company_id": company_id,
-            "date": {"$gte": start_of_month, "$lte": end_of_month}
-        }
-        logs = await timer_logs_collection.find(logs_query).to_list(length=None)
-
-        # Group logs by employee and date
-        logs_by_date = {}
-        for log in logs:
-            logs_by_date.setdefault(log["employee_id"], {})[log["date"].date()] = log
-
-        department_summary = {}
-
-        for employee in employees:
-            raw_dept = employee.get("department")
-            # Try to resolve department name
-            dept_name = (
-                id_to_name.get(str(raw_dept)) or
-                name_to_name.get(str(raw_dept)) or
-                str(raw_dept) or
-                "Unknown Department"
-            )
-            weekly_workdays = employee.get("weekly_workdays", 5)
-            working_hours = employee.get("working_hours", 8)
-            if dept_name not in department_summary:
-                department_summary[dept_name] = {
-                    "total_working_days": 0,
-                    "present_days": 0,
-                    "absent_days": 0,
-                    "leave_days": 0,
-                    "undertime_hours": 0,
-                    "overtime_hours": 0,
-                    "total_hours_logged": 0
-                }
-
-            # Calculate the total working days for this employee in the given month
-            start_date = datetime(year, month, 1)
-            end_date = datetime(year, month + 1, 1) - timedelta(days=1)
-            current_date = start_date
-
-            employee_working_days = 0
-            while current_date <= end_date:
-                if current_date.weekday() < weekly_workdays:
-                    employee_working_days += 1
-                current_date += timedelta(days=1)
-
-            department_summary[dept_name]["total_working_days"] += employee_working_days
-
-            # Reset current_date for attendance processing
-            # Fetch approved leaves for the employee for the month
-            leaves = await leaves_collection.find({
-                "company_id": company_id,
-                "employee_id": employee.get("_id"),
-                "status": "approved",
-                "start_date": {"$lte": end_of_month},
-                "end_date": {"$gte": start_of_month}
-            }).to_list(length=None)
-
-            leave_dates = set()
-            for leave in leaves:
-                leave_start = leave["start_date"].date()
-                leave_end = leave["end_date"].date()
-                leave_dates.update((leave_start + timedelta(days=i)) for i in range((leave_end - leave_start).days + 1))
-
-            current_date = start_date
-            today = datetime.now().date()
-            while current_date <= end_date:
-                current_day = current_date.date()
-                # If current month, only process up to today
-                if year == today.year and month == today.month and current_day > today:
-                    break
-
-                if current_day in leave_dates:
-                    department_summary[dept_name]["leave_days"] += 1
-                else:
-                    log = logs_by_date.get(employee["_id"], {}).get(current_day)
-                    if log:
-                        start_time = log.get("start_time")
-                        end_time = log.get("end_time")
-                        hours_worked = (end_time - start_time).total_seconds() / 3600 if start_time and end_time else 0
-                        undertime = hours_worked < working_hours
-                        overtime = hours_worked > working_hours
-
-                        if hours_worked >= 0.4 * working_hours:
-                            department_summary[dept_name]["present_days"] += 1
-                        else:
-                            department_summary[dept_name]["absent_days"] += 1
-
-                        if undertime:
-                            department_summary[dept_name]["undertime_hours"] += working_hours - hours_worked
-                        if overtime:
-                            department_summary[dept_name]["overtime_hours"] += hours_worked - working_hours
-
-                        department_summary[dept_name]["total_hours_logged"] += hours_worked
-                    else:
-                        department_summary[dept_name]["absent_days"] += 1
-
-                current_date += timedelta(days=1)
-
-        # Calculate attendance rate for each department
-        for dept_name, summary in department_summary.items():
-            total_working_days = summary["total_working_days"]
-            present_days = summary["present_days"]
-            leave_days = summary.get("leave_days", 0)
-            # Exclude leave days from denominator for attendance rate
-            effective_working_days = total_working_days - leave_days
-            summary["attendance_rate"] = (present_days / effective_working_days) * 100 if effective_working_days > 0 else 0
-
-        return department_summary
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

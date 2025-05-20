@@ -1,10 +1,8 @@
 from datetime import datetime, timedelta
-from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Depends, Path, Query
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pytz import UTC
 from db import leaves_collection, timer_logs_collection, employees_collection
 from utils.app_utils import get_current_user
-from utils.report_analytics_utils import calculate_attendance_trend
 from utils.attendance_utils import calculate_department_metrics, calculate_company_metrics, calculate_employee_metrics, get_monthly_attendance_with_times, list_employee_attendance_records
 
 router = APIRouter()
