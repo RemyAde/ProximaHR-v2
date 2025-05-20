@@ -307,7 +307,7 @@ async def create_employee_profile(employee_request: CreateEmployee, user_and_typ
                 if employee_request.department:
                     department = await departments_collection.find_one({"name": {"$regex": f"^{employee_request.department}$", "$options": "i"}})
                     if not department:
-                        raise HTTPException(status_code=400, detail="Department does not exist")
+                        raise HTTPException(status_code=404, detail="Department does not exist")
                     
                     # Update the department with the new employee
                     await departments_collection.update_one(
@@ -644,6 +644,15 @@ async def create_employee_profile(employee_request: CreateEmployee, user_and_typ
     employee_request_dict["date_of_birth"] = datetime.combine(employee_request.date_of_birth, datetime.min.time())
 
     try:
+        # Check if department exists in the same company (case-insensitive)
+        if employee_request_dict.get("department"):
+            existing_department = await departments_collection.find_one({
+                "company_id": company_id,
+                "name": {"$regex": f"^{employee_request_dict['department']}$", "$options": "i"}
+            })
+            if not existing_department:
+                raise HTTPException(status_code=404, detail="Department not found in this company")
+            
         # Insert the employee
         if employee_request.department:
                     department = await departments_collection.find_one({"name": {"$regex": f"^{employee_request.department}$", "$options": "i"}})
