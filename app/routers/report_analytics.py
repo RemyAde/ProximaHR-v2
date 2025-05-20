@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 from pytz import UTC
 from fastapi import APIRouter, Depends, HTTPException, Query
+from utils.attendance_utils import calculate_employee_metrics, get_monthly_attendance_with_times
 from db import employees_collection, timer_logs_collection, leaves_collection, payroll_collection, departments_collection
 from utils.app_utils import get_current_user
 from utils.report_analytics_utils import (calculate_attendance_trend, calculate_department_attendance_percentage, 
-                                    calculate_leave_utilization_trend, calculate_payroll_trend, 
-                                    serialize_objectid, calculate_company_monthly_attendance,
+                                    calculate_leave_utilization_trend, calculate_payroll_trend,
+                                    calculate_company_monthly_attendance,
                                     calculate_overtime_for_department, calculate_attendance_for_department)
 
 router = APIRouter()
@@ -223,7 +224,7 @@ async def get_workforce_growth_and_trend(user_and_type: tuple = Depends(get_curr
 
 
 @router.get("/overtime-by-department-by-month", response_model=dict)
-async def get_overtime_by_department(   
+async def get_overtime_by_department(
     year: int = Query(None, description="Filter overtime hours for a specific year (e.g., 2024)"),
     user_and_type: tuple = Depends(get_current_user)
 ):
@@ -309,12 +310,12 @@ async def get_overtime_by_department(
 
 @router.get("/top-attendance", response_model=dict)
 async def get_best_attendance_records(
-    year: int = Query(None, description="Filter attendance records for a specific year (e.g., 2024)"),
-    top_n: int = Query(10, description="Number of top employees to retrieve"),
+    top_n: int = Query(5, description="Number of top employees to retrieve"),
     user_and_type: tuple = Depends(get_current_user)
 ):
     """
-    Retrieve the employees with the best attendance records based on total hours worked or attendance days.
+    Retrieve the employees with the best attendance records for the current month.
+    Returns a 5-star rating and all relevant metrics for each employee.
     """
     user, user_type = user_and_type
     if user_type != "admin":
@@ -322,47 +323,57 @@ async def get_best_attendance_records(
     company_id = user.get("company_id")
 
     try:
-        # Build the match filter
-        match_filter = {"company_id": company_id, "attendance": {"$exists": True, "$ne": []}}
+        # Get current month and year
+        now = datetime.now(UTC)
+        month = now.month
+        year = now.year
+        # Fetch all active employees for the company
+        employees = await employees_collection.find({"company_id": company_id, "employment_status": "active"}).to_list(length=None)
+        if not employees:
+            return {"company_id": company_id, "best_attendance_records": [], "month": month, "year": year, "top_n": top_n}
 
-        # Add a year filter if provided
-        if year:
-            start_of_year = datetime(year, 1, 1)
-            end_of_year = datetime(year, 12, 31, 23, 59, 59)
-            match_filter["attendance.date"] = {"$gte": start_of_year, "$lte": end_of_year}
-
-        # MongoDB aggregation pipeline
-        best_attendance = await employees_collection.aggregate([
-        {"$match": match_filter},
-        {"$unwind": "$attendance"},  # Flatten attendance array
-        {
-            "$group": {
-                "_id": "$_id",  # Group by employee
-                "first_name": {"$first": "$first_name"},  # Retrieve employee's first name
-                "last_name": {"$first": "$last_name"},  # Retrieve employee's last name
-                "department": {"$first": "$department"},  # Retrieve employee's department
-                "total_hours_worked": {"$sum": "$attendance.hours_worked"},  # Total hours worked
-                "total_days_attended": {"$sum": 1}  # Count total days attended
-            }
-        },
-        {
-            "$addFields": {
-                "full_name": {"$concat": ["$first_name", " ", "$last_name"]}  # Combine first and last name
-            }
-        },
-        {"$sort": {"total_hours_worked": -1}},  # Sort by total hours worked in descending order
-        {"$limit": top_n}  # Limit to top N employees
-        ]).to_list(length=None)
-
-        serialize_objectid(best_attendance)
-
+        employee_metrics = []
+        for employee in employees:
+            employee_id = employee.get("employee_id")
+            first_name = employee.get("first_name", "")
+            last_name = employee.get("last_name", "")
+            job_title = employee.get("job_title", "")
+            department = employee.get("department", None)
+            metrics = await calculate_employee_metrics(employee_id, company_id, month, year)
+            attendance_percentage = metrics["attendance_rate"]
+            # Fetch actual attendance summary to get total hours worked
+            attendance_data = await get_monthly_attendance_with_times(employee_id, company_id, month, year)
+            total_hours_worked = sum([rec["hours_worked"] for rec in attendance_data.get("attendance_summary", [])])
+            # 5-star rating system (attributed)
+            if attendance_percentage >= 98:
+                stars = 5
+            elif attendance_percentage >= 95:
+                stars = 4
+            elif attendance_percentage >= 90:
+                stars = 3
+            elif attendance_percentage >= 80:
+                stars = 2
+            else:
+                stars = 1
+            employee_metrics.append({
+                "employee_id": employee_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "job_title": job_title,
+                "attendance_percentage": round(attendance_percentage, 2),
+                "total_hours_worked": round(total_hours_worked, 2),
+                "attendance_rating": stars
+            })
+        # Sort: attendance_percentage desc, then total_hours_worked desc, then name
+        employee_metrics.sort(key=lambda x: (-x["attendance_percentage"], -x["total_hours_worked"], x["first_name"], x["last_name"]))
+        best_attendance = employee_metrics[:top_n]
         return {
             "company_id": company_id,
             "best_attendance_records": best_attendance,
-            "year": year if year else "all years",
+            "month": month,
+            "year": year,
             "top_n": top_n
         }
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving attendance records: {e}")
     
@@ -446,6 +457,7 @@ async def get_department_attendance_summary(
     """
     Endpoint to get attendance summary for each department.
     """
+
     user, user_type = user_and_type
     if user_type != "admin":
         raise HTTPException(status_code=403, detail="Only admins can access this data.")
@@ -455,6 +467,12 @@ async def get_department_attendance_summary(
         # Get department summaries and attendance percentages
         result = await calculate_attendance_for_department(month=month, year=year, company_id=company_id)
         attendance_percentage = await calculate_department_attendance_percentage(company_id=company_id)
+
+        # After getting attendance_percentage
+        if isinstance(attendance_percentage, list):
+            attendance_percentage = {
+                item["department"]: item["attendance_percentage"] for item in attendance_percentage
+            }
 
         # --- NEW: Fetch department id-name mapping ---
         dept_docs = await departments_collection.find({"company_id": company_id}).to_list(length=None)
