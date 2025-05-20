@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from bson import ObjectId
 from fastapi import APIRouter, File, HTTPException, Depends, Request, UploadFile, status
-from db import employees_collection, leaves_collection, admins_collection
+from db import employees_collection, leaves_collection, admins_collection, departments_collection
 from models.employees import Employee
 from models.leaves import Leave
 from schemas.leave import CreateLeave
@@ -223,7 +223,8 @@ async def get_employee_profile(user_and_type: tuple = Depends(get_current_user))
     try:
         user, user_type = user_and_type
         employee_id = user["employee_id"]
-        company_id = user["company_id"] 
+        company_id = user["company_id"]
+        hod = None
     
         # Fetch employee from the database
         employee = await employees_collection.find_one(
@@ -238,6 +239,26 @@ async def get_employee_profile(user_and_type: tuple = Depends(get_current_user))
         # Convert ObjectId to string if present
         if "_id" in employee:
             employee["_id"] = str(employee["_id"])
+
+        # Handle department field - convert ID to name if necessary
+        if "department" in employee and employee["department"]:
+            try:
+                if ObjectId.is_valid(employee["department"]):
+                    # If it's an ID, look up the department name - you'll need to implement this
+                    # based on your department collection structure
+                    department_doc = await departments_collection.find_one({"_id": ObjectId(employee["department"])})
+                    if department_doc:
+                        employee["department"] = department_doc.get("name", "")
+                        hod = department_doc.get("hod", "")
+                        if hod:
+                            hod_doc = await employees_collection.find_one({"employee_id": hod})
+                            if hod_doc:
+                                hod = f"{hod_doc.get('first_name', '')} {hod_doc.get('last_name', '')}"
+                            else:
+                                hod = None
+            except:
+                # Keep existing department value if conversion fails
+                pass
     
         if "current_year" in employee and isinstance(employee["current_year"], int):
             employee["current_year"] = str(employee["current_year"])
@@ -264,6 +285,8 @@ async def get_employee_profile(user_and_type: tuple = Depends(get_current_user))
                 "payment_status",
             }
         )
+
+        serialized_employee["hod"] = hod
     
         return {"data": serialized_employee}
     except HTTPException as http_err:
