@@ -282,131 +282,18 @@ async def get_attendance_summary(user_and_type: tuple = Depends(get_current_user
         raise HTTPException(status_code=400, detail="Employee record not found")
     
     today = datetime.now(UTC)
-    start_date = datetime(today.year, today.month, 1, tzinfo=UTC)
-    end_date = today
+    month = today.month
+    year = today.year
 
-    # Fetch approved leaves for the employee
-    leaves = await leaves_collection.find({
-        "company_id": employee["company_id"], 
-        "employee_id": employee.get("employee_id"),
-        "status": "approved",
-        "start_date": {"$lte": end_date},
-        "end_date": {"$gte": start_date}
-    }).to_list(length=None)
+    # Use the same logic as employee_monthly_stats
+    report = await get_employee_monthly_report(employee, month, year)
+    # For detailed totals, use calculate_attendance_totals
+    totals = await calculate_attendance_totals(employee, month, year)
 
-    leave_dates = set()
-    for leave in leaves:
-        leave_start = leave["start_date"].date()
-        leave_end = leave["end_date"].date()
-        for i in range((leave_end - leave_start).days + 1):
-            leave_dates.add(leave_start + timedelta(days=i))
-
-    # Fetch attendance logs for the month
-    attendance_logs = await timer_logs_collection.find({
-        "company_id": employee["company_id"],
-        "employee_id": employee.get("employee_id"),
-        "date": {"$gte": start_date, "$lte": end_date}
-    }).to_list(length=None)
-
-    logs_by_date = {log["date"].date(): log for log in attendance_logs}
-
-    # Get working hours for the employee
-    working_hours = employee.get("working_hours", 8)
-
-    # Generate attendance records
-    summary = []
-    current_date = start_date
-    total_leave_days = 0
-    total_absences = 0
-    total_undertimes = 0
-    total_presents = 0
-
-    while current_date <= end_date:
-        current_day = current_date.date()
-        is_leave_day = current_day in leave_dates
-
-        if is_leave_day:
-            attendance_status = "on_leave"
-            total_leave_days += 1
-            hours_worked = 0
-            overtime_flag = 0
-            undertime_flag = 0
-            absent = 0
-        else:
-            log = logs_by_date.get(current_day)
-            if log:
-                start_time = log.get("start_time")
-                end_time = log.get("end_time")
-                if start_time and end_time:
-                    hours_worked = (end_time - start_time).total_seconds() / 3600
-                else:
-                    hours_worked = 0
-
-                if hours_worked > working_hours:
-                    overtime_flag = 1
-                else:
-                    overtime_flag = 0
-
-                undertime_flag = 1 if working_hours > hours_worked >= 0.4 * working_hours else 0
-                absent = 1 if hours_worked < 0.4 * working_hours else 0
-
-                if hours_worked >= 0.9 * working_hours:
-                    attendance_status = "present"
-                    total_presents += 1
-                elif undertime_flag:
-                    attendance_status = "undertime"
-                    total_undertimes += 1
-                elif absent:
-                    attendance_status = "absent"
-                    total_absences += 1
-                else:
-                    attendance_status = "absent"
-                    total_absences += 1
-            else:
-                hours_worked = 0
-                overtime_flag = 0
-                undertime_flag = 0
-                absent = 1
-                attendance_status = "absent"
-                total_absences += 1
-
-        summary.append({
-            "date": current_day,
-            "attendance_status": attendance_status,
-            "hours_worked": round(hours_worked, 2),
-            "overtime": overtime_flag,
-            "undertime": undertime_flag,
-            "absent": absent
-        })
-
-        current_date += timedelta(days=1)
-
-    # Calculate total actual hours and total overtime hours for the month
-    total_actual_hours = sum(record["hours_worked"] for record in summary)
-    total_overtime_hours = sum(max(0, record["hours_worked"] - working_hours) for record in summary)
-
-    # Calculate ideal hours using weekly_workdays and working_hours from employee record
-    weekly_workdays = int(employee.get("weekly_workdays", 5))
-    ideal_hours = await get_ideal_monthly_hours(
-        weekly_workdays=weekly_workdays, 
-        working_hours=int(working_hours), 
-        month=today.month, 
-        year=today.year
-    )
-    
-    attendance_percentage = (total_actual_hours / ideal_hours) * 100 if ideal_hours > 0 else 0
-
-    # Return detailed attendance and summary counts along with the attendance percentage and total overtime hours
     return {
-        # "attendance_summary": summary,
-        "totals": {
-            "leave_days": total_leave_days,
-            "absences": total_absences,
-            "undertimes": total_undertimes,
-            "presents": total_presents,
-            "total_overtime_hours": round(total_overtime_hours, 2)
-        },
-        "attendance_percentage": round(attendance_percentage, 2),
+        "totals": totals,
+        "attendance_percentage": report["attendance_percentage"],
+        "total_overtime_hours": report["total_overtime_hours"]
     }
 
 
