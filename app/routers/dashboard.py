@@ -68,8 +68,8 @@ async def get_company_info(user_and_type: tuple = Depends(get_current_user)):
             pending_leave_count = 0
 
         try:
-            attendance_percentage = await calculate_attendance_trend(user["company_id"], employees_collection, timer_logs_collection)
-            attendance_percentage = round(attendance_percentage, 2) if attendance_percentage else 0.0
+            attendance_data = await calculate_attendance_trend(user["company_id"], employees_collection, timer_logs_collection)
+            attendance_percentage = round(attendance_data.get("current_month_attendance_rate", 0.0), 2) if attendance_data else 0.0
         except Exception:
             attendance_percentage = 0.0
         
@@ -157,8 +157,8 @@ async def department_overview(user_and_type: tuple = Depends(get_current_user)):
             active_leave_count = 0
             
         try:
-            attendance_rate = await calculate_attendance_trend(company_id, employees_collection, timer_logs_collection)
-            attendance_rate = round(attendance_rate, 2) if attendance_rate else 0.0
+            attendance_data = await calculate_attendance_trend(user["company_id"], employees_collection, timer_logs_collection)
+            attendance_rate = round(attendance_data.get("current_month_attendance_rate", 0.0), 2) if attendance_data else 0.0
         except Exception:
             attendance_rate = 0.0
             
