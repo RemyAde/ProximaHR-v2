@@ -4,7 +4,7 @@ ProximaHR is a web application designed for managing HR processes, including use
 
 ## API Documentation
 
-You can find the API documentation at [here](https://proximahr-v2.onrender.com).
+You can find the API documentation [here](https://proximahr-v2.onrender.com/redoc).
 
 ## Features
 
